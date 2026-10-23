@@ -1,0 +1,23 @@
+name: Upload dist
+description: Create distribution file and upload to release
+
+runs:
+  using: composite
+  steps:
+    - id: dist
+      run: meson dist -C builddir --include-subprojects --formats xztar,gztar --no-tests
+      shell: bash
+    - id: upload
+      uses: actions/upload-artifact@v4
+      with:
+        name: release_tarballs-${{ github.ref_name }}
+        path: |
+          builddir/meson-dist/*.tar.xz
+          builddir/meson-dist/*.tar.gz
+    - id: create_release
+      uses: softprops/action-gh-release@v2
+      with:
+        draft: true
+        files: |
+          builddir/meson-dist/*.tar.xz
+          builddir/meson-dist/*.tar.gz

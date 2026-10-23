@@ -1,0 +1,31 @@
+name: Meson Build
+description: Builds Rofi using Meson
+
+inputs:
+  cc:
+    description: Compiler to use
+    required: true
+  xcb:
+    description: Enable xcb backend
+    default: enabled
+  wayland:
+    description: Enable wayland backend
+    default: enabled
+
+runs:
+  using: composite
+  steps:
+    - id: pip
+      run: pip install meson ninja
+      shell: bash
+    - id: setup
+      run: meson setup builddir -Dxcb=${{ inputs.xcb }} -Dwayland=${{ inputs.wayland }}
+      shell: bash
+      env:
+        CC: ${{ inputs.cc }}
+    - id: build
+      run: ninja -C builddir
+      shell: bash
+    - id: test
+      run: ninja -C builddir test
+      shell: bash

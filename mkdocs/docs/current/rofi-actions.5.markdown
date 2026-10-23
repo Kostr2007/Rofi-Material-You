@@ -1,0 +1,1 @@
+../../../doc/rofi-actions.5.markdown
