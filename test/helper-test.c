@@ -1,0 +1,424 @@
+/*
+ * rofi
+ *
+ * MIT/X11 License
+ * Copyright © 2013-2017 Qball Cow <qball@gmpclient.org>
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining
+ * a copy of this software and associated documentation files (the
+ * "Software"), to deal in the Software without restriction, including
+ * without limitation the rights to use, copy, modify, merge, publish,
+ * distribute, sublicense, and/or sell copies of the Software, and to
+ * permit persons to whom the Software is furnished to do so, subject to
+ * the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be
+ * included in all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+ * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+ * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+ * CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+ * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+ * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ *
+ */
+
+#include "config.h"
+
+#include "display.h"
+#include "rofi-icon-fetcher.h"
+#include "rofi.h"
+#include "settings.h"
+#include "theme.h"
+#include <assert.h>
+#include <glib.h>
+#include <helper.h>
+#include <locale.h>
+#include <stdio.h>
+#include <string.h>
+
+static int test = 0;
+
+#define TASSERT(a)                                                             \
+  {                                                                            \
+    assert(a);                                                                 \
+    printf("Test %i passed (%s)\n", ++test, #a);                               \
+  }
+#define TASSERTE(a, b)                                                         \
+  {                                                                            \
+    if ((a) == (b)) {                                                          \
+      printf("Test %i passed (%s == %s) (%u == %u)\n", ++test, #a, #b, a, b);  \
+    } else {                                                                   \
+      printf("Test %i failed (%s == %s) (%u != %u)\n", ++test, #a, #b, a, b);  \
+      abort();                                                                 \
+    }                                                                          \
+  }
+#define TASSERTL(a, b)                                                         \
+  {                                                                            \
+    if ((a) == (b)) {                                                          \
+      printf("Test %i passed (%s == %s) (%d == %d)\n", ++test, #a, #b, a, b);  \
+    } else {                                                                   \
+      printf("Test %i failed (%s == %s) (%d != %d)\n", ++test, #a, #b, a, b);  \
+      abort();                                                                 \
+    }                                                                          \
+  }
+
+#include "widgets/textbox.h"
+
+/** The fzf-v2 sort key for `str`, as filter_elements() builds it. */
+static int fzf_v2_key(const char *pattern, const char *str) {
+  int score = rofi_scorer_fzf_v2_evaluate(
+      pattern, g_utf8_strlen(pattern, -1), str, g_utf8_strlen(str, -1), 0);
+  return rofi_scorer_fzf_v2_sort_key(score, str);
+}
+
+/** Copy of fzf_v2_sort() from view.c, which is static there. */
+static int test_fzf_v2_sort(const void *p1, const void *p2, void *arg) {
+  const unsigned int *a = p1;
+  const unsigned int *b = p2;
+  int *distances = arg;
+  int d = distances[*a] - distances[*b];
+
+  if (d != 0) {
+    return d;
+  }
+  if (*a != *b) {
+    return *a < *b ? -1 : 1;
+  }
+  return 0;
+}
+
+ThemeWidget *rofi_theme = NULL;
+
+gboolean rofi_theme_parse_string(G_GNUC_UNUSED const char *string) {
+  return FALSE;
+}
+
+uint32_t rofi_icon_fetcher_query(G_GNUC_UNUSED const char *name,
+                                 G_GNUC_UNUSED const int size) {
+  return 0;
+}
+void rofi_clear_error_messages(void) {}
+void rofi_clear_warning_messages(void) {}
+uint32_t rofi_icon_fetcher_query_advanced(G_GNUC_UNUSED const char *name,
+                                          G_GNUC_UNUSED const int wsize,
+                                          G_GNUC_UNUSED const int hsize) {
+  return 0;
+}
+
+cairo_surface_t *rofi_icon_fetcher_get(G_GNUC_UNUSED const uint32_t uid) {
+  return NULL;
+}
+
+double textbox_get_estimated_char_height(void) { return 12.0; }
+void rofi_view_get_current_monitor(int *width, int *height) {
+  *width = 1920;
+  *height = 1080;
+}
+double textbox_get_estimated_ch(void) { return 9.0; }
+void rofi_add_error_message(G_GNUC_UNUSED GString *msg) {}
+void rofi_add_warning_message(G_GNUC_UNUSED GString *msg) {}
+
+int rofi_view_error_dialog(const char *msg, G_GNUC_UNUSED int markup) {
+  fputs(msg, stderr);
+  return TRUE;
+}
+
+int monitor_active(G_GNUC_UNUSED workarea *mon) { return 0; }
+
+void display_startup_notification(
+    G_GNUC_UNUSED RofiHelperExecuteContext *context,
+    G_GNUC_UNUSED GSpawnChildSetupFunc *child_setup,
+    G_GNUC_UNUSED gpointer *user_data) {}
+
+int main(int argc, char **argv) {
+  cmd_set_arguments(argc, argv);
+
+  if (setlocale(LC_ALL, "") == NULL) {
+    fprintf(stderr, "Failed to set locale.\n");
+    return EXIT_FAILURE;
+  }
+
+  /**
+   * Char function
+   */
+
+  TASSERT(helper_parse_char("\\n") == '\n');
+  TASSERT(helper_parse_char("\\a") == '\a');
+  TASSERT(helper_parse_char("\\b") == '\b');
+  TASSERT(helper_parse_char("\\t") == '\t');
+  TASSERT(helper_parse_char("\\v") == '\v');
+  TASSERT(helper_parse_char("\\f") == '\f');
+  TASSERT(helper_parse_char("\\r") == '\r');
+  TASSERT(helper_parse_char("\\\\") == '\\');
+  TASSERT(helper_parse_char("\\0") == 0);
+  TASSERT(helper_parse_char("\\x77") == 'w');
+  TASSERT(helper_parse_char("\\x0A") == '\n');
+
+  /**
+   * tokenize
+   */
+
+  TASSERT(levenshtein("aap", g_utf8_strlen("aap", -1), "aap",
+                      g_utf8_strlen("aap", -1), 0) == 0);
+  TASSERT(levenshtein("aap", g_utf8_strlen("aap", -1), "aap ",
+                      g_utf8_strlen("aap ", -1), 0) == 1);
+  TASSERT(levenshtein("aap ", g_utf8_strlen("aap ", -1), "aap",
+                      g_utf8_strlen("aap", -1), 0) == 1);
+  TASSERTE(levenshtein("aap", g_utf8_strlen("aap", -1), "aap noot",
+                       g_utf8_strlen("aap noot", -1), 0),
+           5u);
+  TASSERTE(levenshtein("aap", g_utf8_strlen("aap", -1), "noot aap",
+                       g_utf8_strlen("noot aap", -1), 0),
+           5u);
+  TASSERTE(levenshtein("aap", g_utf8_strlen("aap", -1), "noot aap mies",
+                       g_utf8_strlen("noot aap mies", -1), 0),
+           10u);
+  TASSERTE(levenshtein("noot aap mies", g_utf8_strlen("noot aap mies", -1),
+                       "aap", g_utf8_strlen("aap", -1), 0),
+           10u);
+  TASSERTE(levenshtein("otp", g_utf8_strlen("otp", -1), "noot aap",
+                       g_utf8_strlen("noot aap", -1), 0),
+           5u);
+  /**
+   * Quick converision check.
+   */
+  {
+    char *str = rofi_latin_to_utf8_strdup("\xA1\xB5", 2);
+    TASSERT(g_utf8_collate(str, "¡µ") == 0);
+    g_free(str);
+  }
+
+  {
+    char *str = rofi_force_utf8("Valid utf8", 10);
+    TASSERT(g_utf8_collate(str, "Valid utf8") == 0);
+    g_free(str);
+    char in[] = "Valid utf8 until \xc3\x28 we continue here";
+    TASSERT(g_utf8_validate(in, -1, NULL) == FALSE);
+    str = rofi_force_utf8(in, strlen(in));
+    TASSERT(g_utf8_validate(str, -1, NULL) == TRUE);
+    TASSERT(g_utf8_collate(str, "Valid utf8 until �( we continue here") == 0);
+    g_free(str);
+  }
+  {
+    TASSERT(utf8_strncmp("aapno", "aap€", 3) == 0);
+    TASSERT(utf8_strncmp("aapno", "aap€", 4) != 0);
+    TASSERT(utf8_strncmp("aapno", "a", 4) != 0);
+    TASSERT(utf8_strncmp("a", "aap€", 4) != 0);
+    //        char in[] = "Valid utf8 until \xc3\x28 we continue here";
+    //        TASSERT ( utf8_strncmp ( in, "Valid", 3 ) == 0);
+  }
+  {
+    TASSERTL(
+        rofi_scorer_fuzzy_evaluate("aap noot mies", 12, "aap noot mies", 12, 0),
+        -605);
+    TASSERTL(rofi_scorer_fuzzy_evaluate("anm", 3, "aap noot mies", 12, 0),
+             -155);
+    TASSERTL(rofi_scorer_fuzzy_evaluate("blu", 3, "aap noot mies", 12, 0),
+             1073741824);
+    TASSERTL(rofi_scorer_fuzzy_evaluate("Anm", 3, "aap noot mies", 12, 1),
+             1073741754);
+    TASSERTL(rofi_scorer_fuzzy_evaluate("Anm", 3, "aap noot mies", 12, 0),
+             -155);
+    TASSERTL(rofi_scorer_fuzzy_evaluate("aap noot mies", 12, "Anm", 3, 0),
+             1073741824);
+  }
+  {
+    /* fzf (FuzzyMatchV2) scorer: higher is better, G_MININT/2 for a
+     * non-match. */
+    /* Each whitespace-separated term ("aap", "noot", "mies") is scored
+     * independently against the line and the scores summed. */
+    TASSERTL(rofi_scorer_fzf_v2_evaluate("aap noot mies", 12, "aap noot mies",
+                                         12, 0),
+             316);
+    TASSERTL(rofi_scorer_fzf_v2_evaluate("anm", 3, "aap noot mies", 12, 0), 58);
+    /* Not a subsequence -> non-match sentinel. */
+    TASSERTL(rofi_scorer_fzf_v2_evaluate("blu", 3, "aap noot mies", 12, 0),
+             G_MININT / 2);
+    /* Case-sensitive: upper-case pattern does not match lower-case text. */
+    TASSERTL(rofi_scorer_fzf_v2_evaluate("Anm", 3, "aap noot mies", 12, 1),
+             G_MININT / 2);
+    TASSERTL(rofi_scorer_fzf_v2_evaluate("Anm", 3, "aap noot mies", 12, 0), 58);
+    /* A contiguous match must outscore a scattered one (the fzf property the
+     * rofi-native scorer lacks). */
+    TASSERT(rofi_scorer_fzf_v2_evaluate(
+                "wip", 3, "hourglass not done; wip; in progress", 36, 0) >
+            rofi_scorer_fzf_v2_evaluate("wip", 3, "locked with pen", 15, 0));
+    /* Whitespace-separated terms are scored independently and summed (fzf's
+     * AND semantics). */
+    TASSERTL(
+        rofi_scorer_fzf_v2_evaluate("noot mies", 9, "aap noot mies", 12, 0),
+        228);
+    TASSERTL(rofi_scorer_fzf_v2_evaluate("aap mies", 8, "aap noot mies", 12, 0),
+             202);
+    /* A line matches only if every term matches. */
+    TASSERTL(rofi_scorer_fzf_v2_evaluate("aap xyz", 7, "aap noot mies", 12, 0),
+             G_MININT / 2);
+    /* Leading/trailing/duplicate separators produce no empty terms. */
+    TASSERTL(rofi_scorer_fzf_v2_evaluate("  aap   mies  ", 14, "aap noot mies",
+                                         12, 0),
+             202);
+  }
+  {
+    /* Cases taken from fzf's own algo_test.go (TestFuzzyMatch), verifying the
+     * port reproduces fzf's exact scores. The expected values are fzf's score
+     * expressions evaluated with its constants (scoreMatch=16, gap -3/-1,
+     * boundary=8, camel123=7, consecutive=4, first-char x2, boundary-white=10,
+     * boundary-delimiter=9). */
+    TASSERTL(rofi_scorer_fzf_v2_evaluate("oBZ", 3, "fooBarbaz1", 10, 0), 49);
+    TASSERTL(rofi_scorer_fzf_v2_evaluate("rdoc", 4, "/AutomatorDocument.icns",
+                                         23, 0),
+             79);
+    TASSERTL(
+        rofi_scorer_fzf_v2_evaluate("zshc", 4, "/man1/zshcompctl.1", 18, 0),
+        109);
+    TASSERTL(rofi_scorer_fzf_v2_evaluate("zshc", 4, "/.oh-my-zsh/cache", 17, 0),
+             102);
+    TASSERTL(rofi_scorer_fzf_v2_evaluate(".vimrc", 6, "a.vimrc", 7, 0), 152);
+    TASSERTL(rofi_scorer_fzf_v2_evaluate("12356", 5, "abc123 456", 10, 0), 108);
+    /* These exercise the "last occurrence of the final pattern char extends the
+     * search region" behaviour, i.e. a later/better match must win over an
+     * earlier scattered one. */
+    TASSERTL(rofi_scorer_fzf_v2_evaluate("fbb", 3, "foo bar baz", 11, 0), 78);
+    TASSERTL(rofi_scorer_fzf_v2_evaluate("fbb", 3, "foo/bar/baz", 11, 0), 76);
+    TASSERTL(rofi_scorer_fzf_v2_evaluate("fbb", 3, "fooBarBaz", 9, 0), 74);
+    TASSERTL(rofi_scorer_fzf_v2_evaluate("foo-b", 5, "xFoo-Bar Baz", 12, 0),
+             124);
+    /* Case-sensitive matches. */
+    TASSERTL(rofi_scorer_fzf_v2_evaluate("FBB", 3, "FooBarBaz", 9, 1), 74);
+    TASSERTL(rofi_scorer_fzf_v2_evaluate("oBz", 3, "fooBarbaz", 9, 1), 49);
+    TASSERTL(rofi_scorer_fzf_v2_evaluate("oBZ", 3, "fooBarbaz", 9, 1),
+             G_MININT / 2);
+  }
+  {
+    /* Same score, shorter line first. */
+    TASSERT(fzf_v2_key("apple", "apple") <
+            fzf_v2_key("apple", "baked apple pie"));
+    /* Score outranks length. */
+    TASSERT(fzf_v2_key("fbb", "foo bar baz") < fzf_v2_key("fbb", "fooBarBaz"));
+    /* Equal score and length -> equal key. */
+    TASSERTL(fzf_v2_key("ab", "ab cd") == fzf_v2_key("ab", "ab ef"), 1);
+    /* Surrounding whitespace is not counted. */
+    TASSERTL(fzf_v2_key("ab", "  ab  ") == fzf_v2_key("ab", "ab"), 1);
+    /* Code points, not bytes. */
+    TASSERTL(fzf_v2_key("ab", "ab\xE4\xBD\xA0") ==
+                 fzf_v2_key("ab", "abx"),
+             1);
+    /* Non-matches share a bucket (clamped score), then order by length. */
+    TASSERT(fzf_v2_key("zz", "aa") == fzf_v2_key("zz", "bb"));
+    TASSERT(fzf_v2_key("zz", "aa") < fzf_v2_key("zz", "aaa"));
+    /* Any match beats any non-match. */
+    TASSERT(fzf_v2_key("ab", "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxab") <
+            fzf_v2_key("ab", "a"));
+    /* Widest key is G_MAXINT, so subtracting two keys cannot overflow. */
+    TASSERT(fzf_v2_key("ab", "ab") >= 0);
+    TASSERT(fzf_v2_key("zz", "aa") >= 0);
+    TASSERTL((int)(((guint32)G_MAXUINT16 << 15) | 0x7FFF), G_MAXINT);
+    /* Worst bucket, empty line. */
+    TASSERTL(fzf_v2_key("zz", ""), (int)((guint32)G_MAXUINT16 << 15));
+  }
+  {
+    /* Ordering as produced by `fzf --filter=apple --scheme=default` (0.74.4).
+     * "apple" is last in the input and the other lines also match at a word
+     * boundary, so all but one score alike and the tiebreak decides; without
+     * it "apple" comes fourth. */
+    const char *const lines[] = {
+        "baked apple pie",  "green apple tart", "candy apple cake",
+        "pine-apple juice", "apple",
+    };
+    /* Indices into lines[], in fzf's order. The two 16-char lines tie on both
+     * criteria and so keep their input order. "pine-apple juice" scores lower
+     * because '-' gives BONUS_BOUNDARY rather than BONUS_BOUNDARY_WHITE, and
+     * is no longer than those two, so it also pins score above length. */
+    const int expected[] = {4, 0, 1, 2, 3};
+    const int scores[] = {140, 140, 140, 128, 140};
+    const unsigned int n = G_N_ELEMENTS(lines);
+    unsigned int order[G_N_ELEMENTS(lines)];
+    int keys[G_N_ELEMENTS(lines)];
+
+    for (unsigned int i = 0; i < n; i++) {
+      /* Reversed, so the tied pair only lands in input order if the
+       * comparison really falls back to it; a stable sort would not. */
+      order[i] = n - 1 - i;
+      keys[i] = fzf_v2_key("apple", lines[i]);
+      TASSERTL(rofi_scorer_fzf_v2_evaluate("apple", 5, lines[i],
+                                           g_utf8_strlen(lines[i], -1), 0),
+               scores[i]);
+    }
+    g_qsort_with_data(order, n, sizeof(unsigned int), test_fzf_v2_sort, keys);
+    for (unsigned int i = 0; i < n; i++) {
+      TASSERTL((int)order[i], expected[i]);
+    }
+  }
+
+  /**
+   * Case sensitivity
+   */
+  {
+    int case_smart = config.case_smart;
+    int case_sensitive = config.case_sensitive;
+    {
+      config.case_smart = FALSE;
+      config.case_sensitive = FALSE;
+      TASSERT(parse_case_sensitivity("all lower case 你好") == 0);
+      TASSERT(parse_case_sensitivity("not All lowEr Case 你好") == 0);
+      config.case_sensitive = TRUE;
+      TASSERT(parse_case_sensitivity("all lower case 你好") == 1);
+      TASSERT(parse_case_sensitivity("not All lowEr Case 你好") == 1);
+    }
+    {
+      config.case_smart = TRUE;
+      config.case_sensitive = TRUE;
+      TASSERT(parse_case_sensitivity("all lower case") == 0);
+      TASSERT(parse_case_sensitivity("AAAAAAAAAAAA") == 1);
+      config.case_sensitive = FALSE;
+      TASSERT(parse_case_sensitivity("all lower case 你好") == 0);
+      TASSERT(parse_case_sensitivity("not All lowEr Case 你好") == 1);
+    }
+    config.case_smart = case_smart;
+    config.case_sensitive = case_sensitive;
+  }
+
+  char *a;
+  a = helper_string_replace_if_exists(
+      "{terminal} [-t {title} blub ]-e {cmd}", "{cmd}", "aap", "{title}",
+      "some title", "{terminal}", "rofi-sensible-terminal", NULL);
+  printf("%s\n", a);
+  TASSERT(g_utf8_collate(
+              a, "rofi-sensible-terminal -t some title blub -e aap") == 0);
+  g_free(a);
+  a = helper_string_replace_if_exists("{terminal} [-t {title} blub ]-e {cmd}",
+                                      "{cmd}", "aap", "{terminal}",
+                                      "rofi-sensible-terminal", NULL);
+  printf("%s\n", a);
+  TASSERT(g_utf8_collate(a, "rofi-sensible-terminal -e aap") == 0);
+  g_free(a);
+  a = helper_string_replace_if_exists(
+      "{name} [<span weight='light' size='small'><i>({category})</i></span>]",
+      "{name}", "Librecad", "{category}", "Desktop app", "{terminal}",
+      "rofi-sensible-terminal", NULL);
+  printf("%s\n", a);
+  TASSERT(g_utf8_collate(a, "Librecad <span weight='light' "
+                            "size='small'><i>(Desktop app)</i></span>") == 0);
+  g_free(a);
+  a = helper_string_replace_if_exists(
+      "{name}[ <span weight='light' size='small'><i>({category})</i></span>]",
+      "{name}", "Librecad", "{terminal}", "rofi-sensible-terminal", NULL);
+  TASSERT(g_utf8_collate(a, "Librecad") == 0);
+  g_free(a);
+  a = helper_string_replace_if_exists(
+      "{terminal} [{title} blub ]-e {cmd}", "{cmd}", "aap", "{title}",
+      "some title", "{terminal}", "rofi-sensible-terminal", NULL);
+  printf("%s\n", a);
+  TASSERT(g_utf8_collate(a, "rofi-sensible-terminal some title blub -e aap") ==
+          0);
+  g_free(a);
+  a = helper_string_replace_if_exists(
+      "{terminal} [{title} blub ]-e {cmd}", "{cmd}", "aap", "{title}", NULL,
+      "{terminal}", "rofi-sensible-terminal", NULL);
+  printf("%s\n", a);
+  TASSERT(g_utf8_collate(a, "rofi-sensible-terminal -e aap") == 0);
+  g_free(a);
+}

@@ -1,0 +1,11 @@
+/**
+ * Material You (Material 3 Expressive) for rofi, dark.
+ *
+ * rofi -show drun -theme material-you
+ *
+ * Colors: the baseline dark palette, replaced by the palette generated from
+ * your wallpaper (`rofi-myou apply ~/Pictures/wallpaper.jpg`) when present.
+ */
+@import "material-you/material-you-dark.rasinc"
+@import "material-you/material-you-base.rasinc"
+?import "~/.config/rofi/material-you/colors.rasi"

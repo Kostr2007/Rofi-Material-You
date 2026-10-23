@@ -1,0 +1,8 @@
+/**
+ * Material You (Material 3 Expressive) for rofi, light.
+ *
+ * rofi -show drun -theme material-you-light
+ */
+@import "material-you/material-you-light.rasinc"
+@import "material-you/material-you-base.rasinc"
+?import "~/.config/rofi/material-you/colors.rasi"

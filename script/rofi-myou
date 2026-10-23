@@ -1,0 +1,334 @@
+#!/usr/bin/env python3
+# rofi-myou: Material You palettes for rofi.
+#
+# Generates the Material 3 color roles from a wallpaper or a seed color with
+# matugen (same algorithm and schemes as the rest of a Material You desktop)
+# and writes them as rofi theme variables. Every Material You theme imports
+# that file, so the next rofi start uses the new colors.
+#
+# Only the Python standard library is used.
+#
+# MIT License, Copyright (c) 2026 Kostr2007
+
+import argparse
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+VERSION = "1.0.0"
+APP = "material-you"
+HEX_RE = re.compile(r"^#?[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$")
+
+# Roles written to the theme, in the order of the M3 spec.
+ROLES = [
+    "primary", "on_primary", "primary_container", "on_primary_container",
+    "secondary", "on_secondary", "secondary_container", "on_secondary_container",
+    "tertiary", "on_tertiary", "tertiary_container", "on_tertiary_container",
+    "error", "on_error", "error_container", "on_error_container",
+    "surface", "on_surface", "surface_variant", "on_surface_variant",
+    "surface_dim", "surface_bright",
+    "surface_container_lowest", "surface_container_low", "surface_container",
+    "surface_container_high", "surface_container_highest",
+    "outline", "outline_variant",
+    "inverse_surface", "inverse_on_surface", "inverse_primary",
+    "shadow", "scrim",
+]
+
+# Used when an older matugen does not report a role.
+FALLBACKS = {
+    "surface_dim": "surface",
+    "surface_bright": "surface_variant",
+    "surface_container_lowest": "surface",
+    "surface_container_low": "surface",
+    "surface_container": "surface_variant",
+    "surface_container_high": "surface_variant",
+    "surface_container_highest": "surface_variant",
+    "outline_variant": "outline",
+    "shadow": None,
+    "scrim": None,
+}
+
+
+class MyouError(Exception):
+    pass
+
+
+def xdg(var: str, default: str) -> Path:
+    value = os.environ.get(var)
+    if value and os.path.isabs(value):
+        return Path(value)
+    return Path.home() / default
+
+
+def default_output() -> Path:
+    return xdg("XDG_CONFIG_HOME", ".config") / "rofi" / APP / "colors.rasi"
+
+
+def norm_hex(value: str) -> str:
+    value = value.strip()
+    if not HEX_RE.match(value):
+        raise MyouError(f"not a hex color: {value!r}")
+    value = value.lstrip("#")
+    return "#" + value[:6].upper()
+
+
+# --------------------------------------------------------------------------
+# palette generation
+# --------------------------------------------------------------------------
+
+def matugen_bin() -> str:
+    exe = os.environ.get("ROFI_MYOU_MATUGEN") or shutil.which("matugen")
+    if not exe:
+        raise MyouError("matugen not found in PATH (needed for images and seed colors, "
+                        "a JSON palette works without it)")
+    return exe
+
+
+def _matugen_supports(exe: str, flag: str) -> bool:
+    try:
+        out = subprocess.run([exe, "--help"], capture_output=True, text=True, timeout=10).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return flag in out
+
+
+def run_matugen(source: dict, mode: str, scheme: str, contrast: float) -> dict:
+    exe = matugen_bin()
+    with tempfile.TemporaryDirectory(prefix="rofi-myou-") as tmp:
+        conf = Path(tmp) / "matugen.toml"
+        # matugen requires a templates table, the theme is rendered here.
+        conf.write_text("[config]\n\n[templates]\n")
+        args = [exe, "-c", str(conf)]
+        if "image" in source:
+            image = os.path.expanduser(source["image"])
+            if not os.path.isfile(image):
+                raise MyouError(f"image not found: {image}")
+            args += ["image", image]
+            if _matugen_supports(exe, "--source-color-index"):
+                args += ["--source-color-index", "0"]
+        elif "color" in source:
+            args += ["color", "hex", norm_hex(source["color"])]
+        else:
+            raise MyouError(f"unsupported source: {source}")
+        args += ["-m", mode, "-t", scheme, "--contrast", str(contrast), "-j", "hex", "--dry-run"]
+
+        env = dict(os.environ)
+        home = env.get("HOME", "")
+        if not home or not os.access(home, os.W_OK):
+            env["HOME"] = tmp  # e.g. inside the nix build sandbox
+        env.setdefault("XDG_CACHE_HOME", os.path.join(tmp, "cache"))
+        proc = subprocess.run(args, capture_output=True, text=True, env=env, stdin=subprocess.DEVNULL)
+        if proc.returncode != 0:
+            raise MyouError(f"matugen failed ({proc.returncode}):\n{proc.stderr or proc.stdout}")
+        out = proc.stdout
+        start = out.find("{")
+        if start < 0:
+            raise MyouError(f"matugen produced no JSON:\n{out}\n{proc.stderr}")
+        return json.JSONDecoder().raw_decode(out[start:])[0]
+
+
+def roles_from_json(data: dict, mode: str) -> dict:
+    """Accepts matugen JSON (old and new layout) and the palette.json of
+    Material-You-Terminal (`myt`)."""
+    colors = data.get("colors", data)
+    roles = {}
+    if isinstance(colors.get(mode), dict) and "primary" in colors[mode]:
+        # old layout: {"colors": {"dark": {"primary": "#..."}, "light": {...}}}
+        colors = colors[mode]
+    for name, entry in colors.items():
+        name = name.replace("-", "_")
+        if isinstance(entry, str) and HEX_RE.match(entry):
+            roles[name] = norm_hex(entry)
+            continue
+        if not isinstance(entry, dict):
+            continue
+        variant = entry.get(mode) or entry.get("default")
+        if isinstance(variant, dict):
+            variant = variant.get("color")
+        if isinstance(variant, str) and HEX_RE.match(variant):
+            roles[name] = norm_hex(variant)
+    return roles
+
+
+def complete_roles(roles: dict) -> dict:
+    out = {}
+    for role in ROLES:
+        if role in roles:
+            out[role] = roles[role]
+            continue
+        fallback = FALLBACKS.get(role, "missing")
+        if fallback is None:
+            out[role] = "#000000"
+        elif fallback in roles:
+            out[role] = roles[fallback]
+        else:
+            raise MyouError(f"palette has no '{role}' color")
+    return out
+
+
+def palette_from_source(source: dict, mode: str, scheme: str, contrast: float) -> dict:
+    if "json" in source:
+        path = os.path.expanduser(source["json"])
+        try:
+            with open(path) as f:
+                data = json.load(f)
+        except (OSError, ValueError) as e:
+            raise MyouError(f"cannot read {path}: {e}")
+        roles = roles_from_json(data, mode)
+    else:
+        roles = roles_from_json(run_matugen(source, mode, scheme, contrast), mode)
+    if "primary" not in roles:
+        raise MyouError("the palette does not contain a Material You scheme")
+    return complete_roles(roles)
+
+
+def parse_source(value: str) -> dict:
+    if HEX_RE.match(value):
+        return {"color": value}
+    if value.lower().endswith(".json"):
+        return {"json": os.path.abspath(os.path.expanduser(value))}
+    return {"image": os.path.abspath(os.path.expanduser(value))}
+
+
+# --------------------------------------------------------------------------
+# output
+# --------------------------------------------------------------------------
+
+def render_rasi(palette: dict, meta: dict) -> str:
+    lines = [
+        "/**",
+        " * Material You color roles for rofi, generated by rofi-myou " + VERSION + ".",
+        " * " + ", ".join(f"{k}: {v}" for k, v in meta.items()),
+        " * Do not edit, run `rofi-myou apply` again instead.",
+        " */",
+        "* {",
+    ]
+    width = max(len(r) for r in ROLES) + 2
+    for role in ROLES:
+        name = role.replace("_", "-") + ":"
+        lines.append(f"    {name:<{width}} {palette[role]};")
+    lines.append("}")
+    return "\n".join(lines) + "\n"
+
+
+def atomic_write(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix=".colors-", dir=path.parent)
+    with os.fdopen(fd, "w") as f:
+        f.write(text)
+    os.replace(tmp, path)
+
+
+def swatch(hex_color: str) -> str:
+    if not sys.stdout.isatty() or os.environ.get("NO_COLOR"):
+        return ""
+    r, g, b = (int(hex_color[i:i + 2], 16) for i in (1, 3, 5))
+    return f"\x1b[48;2;{r};{g};{b}m    \x1b[0m "
+
+
+def read_palette(path: Path) -> dict:
+    palette = {}
+    for m in re.finditer(r"^\s*([a-z-]+):\s*(#[0-9A-Fa-f]{6})\s*;", path.read_text(), re.M):
+        palette[m.group(1)] = m.group(2)
+    return palette
+
+
+# --------------------------------------------------------------------------
+# commands
+# --------------------------------------------------------------------------
+
+def parse_overrides(values) -> dict:
+    out = {}
+    for item in values or []:
+        if "=" not in item:
+            raise MyouError(f"--set expects role=#RRGGBB, got {item!r}")
+        role, value = item.split("=", 1)
+        role = role.strip().replace("-", "_")
+        if role not in ROLES:
+            raise MyouError(f"unknown color role {role!r}, one of: {', '.join(ROLES)}")
+        out[role] = norm_hex(value)
+    return out
+
+
+def cmd_apply(args) -> int:
+    source = parse_source(args.source)
+    overrides = parse_overrides(args.set)
+    palette = palette_from_source(source, args.mode, args.scheme, args.contrast)
+    palette.update(overrides)
+    meta = {"source": args.source, "mode": args.mode, "scheme": args.scheme,
+            "contrast": args.contrast}
+    out = Path(os.path.expanduser(args.out)) if args.out else default_output()
+    atomic_write(out, render_rasi(palette, meta))
+    if not args.quiet:
+        print(f"rofi-myou: wrote {out} (primary {palette['primary']}, surface {palette['surface']})")
+    return 0
+
+
+def cmd_reset(args) -> int:
+    out = Path(os.path.expanduser(args.out)) if args.out else default_output()
+    if out.exists():
+        out.unlink()
+        print(f"rofi-myou: removed {out}, the themes use their built-in palette again")
+    return 0
+
+
+def cmd_palette(args) -> int:
+    out = Path(os.path.expanduser(args.out)) if args.out else default_output()
+    if not out.exists():
+        print(f"rofi-myou: {out} does not exist, the built-in baseline palette is used")
+        return 1
+    for name, value in read_palette(out).items():
+        print(f"{swatch(value)}{value}  {name}")
+    return 0
+
+
+def cmd_path(args) -> int:
+    print(Path(os.path.expanduser(args.out)) if args.out else default_output())
+    return 0
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(
+        prog="rofi-myou",
+        description="Material You (Material 3) palettes for the rofi Material You themes.")
+    ap.add_argument("--version", action="version", version=f"rofi-myou {VERSION}")
+    ap.add_argument("--out", help="palette file (default: $XDG_CONFIG_HOME/rofi/material-you/colors.rasi)")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+
+    p = sub.add_parser("apply", help="generate the palette from a wallpaper, a #hex color or a JSON palette")
+    p.add_argument("source", help="image, '#RRGGBB', matugen JSON or Material-You-Terminal palette.json")
+    p.add_argument("-m", "--mode", choices=["dark", "light"], default="dark")
+    p.add_argument("-t", "--scheme", default="scheme-tonal-spot",
+                   help="matugen scheme: scheme-tonal-spot, scheme-expressive, scheme-vibrant, "
+                        "scheme-fidelity, scheme-content, scheme-rainbow, scheme-fruit-salad, "
+                        "scheme-neutral, scheme-monochrome")
+    p.add_argument("-c", "--contrast", type=float, default=0.0, help="from -1 to 1")
+    p.add_argument("-s", "--set", action="append", metavar="ROLE=#RRGGBB",
+                   help="override one color role, e.g. --set primary=#D0BCFF (repeatable)")
+    p.add_argument("-q", "--quiet", action="store_true")
+    p.set_defaults(func=cmd_apply)
+
+    p = sub.add_parser("reset", help="remove the generated palette")
+    p.set_defaults(func=cmd_reset)
+    p = sub.add_parser("palette", help="show the generated palette")
+    p.set_defaults(func=cmd_palette)
+    p = sub.add_parser("path", help="print the palette file location")
+    p.set_defaults(func=cmd_path)
+
+    args = ap.parse_args(argv)
+    if getattr(args, "contrast", 0.0) and not -1.0 <= args.contrast <= 1.0:
+        ap.error("--contrast must be between -1 and 1")
+    try:
+        return args.func(args)
+    except MyouError as e:
+        print(f"rofi-myou: {e}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

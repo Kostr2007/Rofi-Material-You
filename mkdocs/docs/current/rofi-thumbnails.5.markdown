@@ -1,0 +1,1 @@
+../../../doc/rofi-thumbnails.5.markdown

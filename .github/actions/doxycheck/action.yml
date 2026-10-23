@@ -1,0 +1,22 @@
+name: Doxygen Check
+description: Checks for Doxygen warnings
+
+runs:
+  using: composite
+  steps:
+    - id: doxy
+      run: ninja -C builddir doc/html > builddir/doxygen.log 2>&1
+      shell: bash
+    - id: check
+      run: |
+        if [[ "$(grep -c warning: builddir/doxygen.log)" != 0 ]]; then
+          echo
+          echo Doxygen warnings found:
+          grep warning builddir/doxygen.log
+          echo
+
+          exit 1
+        fi
+
+        python ./doxy-coverage/doxy-coverage.py builddir/doc/html/xml/
+      shell: bash

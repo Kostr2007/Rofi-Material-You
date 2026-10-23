@@ -1,0 +1,19 @@
+#!/bin/sh
+
+set -eu
+
+cd "${MESON_DIST_ROOT}"
+
+# deploy docs
+mkdir build
+meson setup build -Dprefix=/usr
+ninja -C build
+cp build/doc/*.1 doc
+cp build/doc/*.5 doc
+rm -rf build
+
+# remove unwanted files in submodules
+# (.gitattributes only applies to the root repo)
+rm -f subprojects/*/.mailmap
+rm -f subprojects/*/.gitignore
+rm -f subprojects/*/.travis.yml

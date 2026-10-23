@@ -1,0 +1,237 @@
+/**
+ * Material You for rofi: shared component styles.
+ *
+ * Colors come from the Material 3 color roles (@primary, @surface, ...),
+ * motion from the Material 3 Expressive springs. Shapes follow the M3 shape
+ * scale: extra-large (28px) for the window, full (pill) for the search bar
+ * and the selection, large (16px) for list items.
+ *
+ * See docs/MATERIAL-YOU.md for every property used here.
+ */
+
+configuration {
+    show-icons:           true;
+    drun-display-format:  "{name}";
+    display-drun:         "Apps";
+    display-run:          "Run";
+    display-window:       "Windows";
+    display-filebrowser:  "Files";
+    display-ssh:          "SSH";
+    display-combi:        "All";
+    motion-scheme:        "expressive";
+}
+
+* {
+    font:                 "Roboto Flex, Roboto, sans-serif 12";
+    font-title:           "Roboto Flex, Roboto, sans-serif Medium 12";
+
+    /* M3 shape scale */
+    shape-extra-large:    28px;
+    shape-large:          16px;
+    shape-medium:         12px;
+    shape-full:           999px;
+
+    background-color:     transparent;
+    text-color:           @on-surface;
+    border-color:         @outline-variant;
+}
+
+window {
+    location:             center;
+    anchor:               center;
+    width:                600px;
+    /* Room for the elevation shadow of the card, needs a compositor. */
+    padding:              18px;
+    background-color:     transparent;
+
+    open-animation:          "scale";
+    open-animation-spring:   "spatial-fast";
+    open-animation-scale:    0.9;
+}
+
+mainbox {
+    background-color:     @surface-container;
+    border-radius:        @shape-extra-large;
+    elevation:            3;
+    shadow-color:         @shadow;
+    padding:              12px;
+    spacing:              12px;
+    children:             [ inputbar, mode-switcher, message, listview ];
+}
+
+/* ---- Search bar (M3 search bar: 56dp, full shape) ---------------------- */
+
+inputbar {
+    background-color:     @surface-container-highest;
+    border-radius:        @shape-full;
+    padding:              6px 20px 6px 6px;
+    spacing:              14px;
+    children:             [ prompt, entry, num-filtered-rows ];
+}
+
+prompt {
+    background-color:     @primary;
+    text-color:           @on-primary;
+    font:                 @font-title;
+    border-radius:        @shape-full;
+    padding:              10px 18px;
+    vertical-align:       0.5;
+}
+
+entry {
+    text-color:           @on-surface;
+    placeholder:          "Search";
+    placeholder-color:    @on-surface-variant;
+    cursor-color:         @primary;
+    cursor-width:         2px;
+    cursor-animation:     true;
+    vertical-align:       0.5;
+}
+
+num-filtered-rows {
+    text-color:           @on-surface-variant;
+    vertical-align:       0.5;
+}
+
+/* ---- Mode switcher (M3 segmented / tabs with a springy indicator) ------ */
+
+mode-switcher {
+    background-color:     @surface-container-low;
+    border-radius:        @shape-full;
+    padding:              4px;
+    spacing:              4px;
+    selection-indicator:  true;
+}
+
+button {
+    padding:              8px 12px;
+    border-radius:        @shape-full;
+    text-color:           @on-surface-variant;
+    horizontal-align:     0.5;
+    cursor:               pointer;
+    color-animation:      true;
+}
+
+button selected {
+    background-color:     @secondary-container;
+    text-color:           @on-secondary-container;
+}
+
+/* ---- Message (M3 tonal card) ------------------------------------------- */
+
+message {
+    background-color:     @tertiary-container;
+    border-radius:        @shape-large;
+    padding:              12px 16px;
+}
+
+textbox {
+    text-color:           @on-tertiary-container;
+}
+
+error-message {
+    background-color:     @error-container;
+    border-radius:        @shape-extra-large;
+    padding:              20px;
+}
+
+error-message textbox {
+    text-color:           @on-error-container;
+}
+
+/* ---- List (M3 list with a springy selection indicator) ----------------- */
+
+listview {
+    lines:                7;
+    columns:              1;
+    spacing:              2px;
+    fixed-height:         false;
+    dynamic:              true;
+    cycle:                true;
+    scrollbar:            false;
+
+    selection-indicator:          true;
+    selection-indicator-stretch:  true;
+    selection-indicator-spring:   "spatial-default";
+    entrance-animation:           true;
+    entrance-stagger:             28;
+    entrance-distance:            14px;
+    ripple:                       true;
+}
+
+scrollbar {
+    handle-width:           4px;
+    handle-color:           @outline;
+    handle-rounded-corners: true;
+    handle-animation:       true;
+    margin:                 0 0 0 6px;
+}
+
+element {
+    padding:              8px 14px 8px 8px;
+    spacing:              14px;
+    border-radius:        @shape-large;
+    cursor:               pointer;
+}
+
+element selected.normal {
+    background-color:     @secondary-container;
+    border-radius:        @shape-full;
+}
+
+element selected.active {
+    background-color:     @tertiary-container;
+    border-radius:        @shape-full;
+}
+
+element selected.urgent {
+    background-color:     @error-container;
+    border-radius:        @shape-full;
+}
+
+element-icon {
+    size:                 40px;
+    vertical-align:       0.5;
+
+    /* Tonal shape behind the icon, morphs on selection. */
+    shape:                "circle";
+    shape-color:          @surface-container-highest;
+    shape-spring:         "spatial-fast";
+    icon-scale:           0.66;
+}
+
+element-icon selected {
+    shape:                "cookie-9";
+    shape-color:          @primary;
+    shape-rotation:       30;
+    icon-scale:           0.74;
+}
+
+element-text {
+    text-color:           @on-surface;
+    vertical-align:       0.5;
+    highlight:            bold;
+    color-animation:      true;
+}
+
+element-text selected.normal {
+    text-color:           @on-secondary-container;
+}
+
+element-text selected.active {
+    text-color:           @on-tertiary-container;
+}
+
+element-text normal.active,
+element-text alternate.active {
+    text-color:           @tertiary;
+}
+
+element-text normal.urgent,
+element-text alternate.urgent {
+    text-color:           @error;
+}
+
+element-text selected.urgent {
+    text-color:           @on-error-container;
+}
