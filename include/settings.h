@@ -225,6 +225,15 @@ typedef struct {
   gboolean enable_imdkit;
   /** Fallback icon theme setting. */
   char *fallback_icon_themes;
+
+  /** Material You: enable spring animations. */
+  unsigned int animations;
+  /** Material You: motion scheme, "expressive" or "standard". */
+  char *motion_scheme;
+  /** Material You: animation speed factor, "1.0" is normal. */
+  char *animation_speed;
+  /** Material You: animation frame rate. */
+  unsigned int animation_fps;
 } Settings;
 
 /** Default number of lines in the list view */

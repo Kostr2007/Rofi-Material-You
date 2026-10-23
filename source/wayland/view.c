@@ -460,7 +460,7 @@ static void wayland_rofi_view_update(RofiViewState *state, gboolean qr) {
     g_debug("draw normal mode: surface=%dx%d", buffer_width, buffer_height);
   }
 
-  widget_draw(WIDGET(state->main_window), d);
+  rofi_view_draw_main_window(state, d);
 
   TICK_N("widgets");
   cairo_destroy(d);

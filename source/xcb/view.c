@@ -241,7 +241,7 @@ static void xcb_rofi_view_update(RofiViewState *state, gboolean qr) {
   cairo_set_operator(d, CAIRO_OPERATOR_OVER);
 
   TICK_N("Background");
-  widget_draw(WIDGET(state->main_window), d);
+  rofi_view_draw_main_window(state, d);
 
 #ifdef XCB_IMDKIT
   if (config.enable_imdkit) {

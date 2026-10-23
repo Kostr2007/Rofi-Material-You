@@ -355,5 +355,56 @@ int widget_get_absolute_xpos(widget *wid);
  * @returns the absolute y-position of widget of the widget in pixels.
  */
 int widget_get_absolute_ypos(widget *wid);
+/**
+ * @param wid        The widget handle.
+ * @param suppressed If the background should not be painted.
+ *
+ * Used by selection indicators that paint the background of the selected
+ * widget themselves.
+ */
+void widget_set_background_suppressed(widget *wid, gboolean suppressed);
+
+/**
+ * @param wid    The widget handle.
+ * @param x      Set to the x position (in the parent coordinates).
+ * @param y      Set to the y position (in the parent coordinates).
+ * @param w      Set to the width.
+ * @param h      Set to the height.
+ * @param radius Set to the corner radius.
+ *
+ * Get the area the background of the widget is painted in (inside the
+ * margin).
+ *
+ * @returns FALSE if the widget is not visible.
+ */
+gboolean widget_get_background_rect(widget *wid, double *x, double *y,
+                                    double *w, double *h, double *radius);
+
+/**
+ * @param d The cairo context.
+ * @param x X position.
+ * @param y Y position.
+ * @param w Width.
+ * @param h Height.
+ * @param r Corner radius, clamped to fit.
+ *
+ * Add a rounded rectangle as a new sub path.
+ */
+void rofi_rounded_rectangle(cairo_t *d, double x, double y, double w, double h,
+                            double r);
+
+/**
+ * @param wid   The widget handle.
+ * @param d     The cairo context.
+ * @param dx    Horizontal offset.
+ * @param dy    Vertical offset.
+ * @param alpha Opacity.
+ *
+ * Draw the widget translucent and moved by (dx, dy), used by the entrance
+ * animations. The widget is rendered into an intermediate image first.
+ */
+void widget_draw_with_alpha(widget *wid, cairo_t *d, double dx, double dy,
+                            double alpha);
+
 /**@}*/
 #endif // ROFI_WIDGET_H

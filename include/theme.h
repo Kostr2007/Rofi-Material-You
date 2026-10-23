@@ -239,6 +239,19 @@ void rofi_theme_get_color(const widget *widget, const char *property,
 /**
  * @param widget   The widget to query
  * @param property The property to query.
+ * @param color    Set to the color when found.
+ *
+ * Look up a color property without drawing, used by the Material You
+ * animations to interpolate between colors.
+ *
+ * @returns TRUE if the color was found.
+ */
+gboolean rofi_theme_get_color_value(const widget *widget, const char *property,
+                                    ThemeColor *color);
+
+/**
+ * @param widget   The widget to query
+ * @param property The property to query.
  * @param d        The drawable to apply color.
  *
  * Obtain the image of the widget and applies this to the drawable d.

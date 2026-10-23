@@ -30,6 +30,7 @@
 
 #include "widgets/box.h"
 #include "theme.h"
+#include "widgets/indicator.h"
 #include "widgets/widget-internal.h"
 #include "widgets/widget.h"
 #include <stdio.h>
@@ -45,6 +46,9 @@ struct _box {
   RofiDistance spacing;
 
   GList *children;
+
+  /** Material You: selection indicator over the children. */
+  RofiIndicator indicator;
 };
 
 static void box_update(widget *wid);
@@ -265,6 +269,20 @@ static void hori_calculate_size(box *b) {
 
 static void box_draw(widget *wid, cairo_t *draw) {
   box *b = (box *)wid;
+  if (b->indicator.enabled) {
+    widget *selected = NULL;
+    for (GList *iter = g_list_first(b->children); iter != NULL;
+         iter = g_list_next(iter)) {
+      widget *child = (widget *)iter->data;
+      if (child->enabled && child->state != NULL &&
+          g_str_has_prefix(child->state, "selected")) {
+        selected = child;
+        break;
+      }
+    }
+    rofi_indicator_set_selected(&(b->indicator), selected);
+    rofi_indicator_draw(&(b->indicator), draw);
+  }
   for (GList *iter = g_list_first(b->children); iter != NULL;
        iter = g_list_next(iter)) {
     widget *child = (widget *)iter->data;
@@ -361,6 +379,7 @@ box *box_create(widget *parent, const char *name, RofiOrientation type) {
   b->type = rofi_theme_get_orientation(WIDGET(b), "orientation", b->type);
 
   b->spacing = rofi_theme_get_distance(WIDGET(b), "spacing", DEFAULT_SPACING);
+  rofi_indicator_init(&(b->indicator), WIDGET(b));
   return b;
 }
 

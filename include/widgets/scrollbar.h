@@ -27,6 +27,7 @@
 
 #ifndef ROFI_SCROLLBAR_H
 #define ROFI_SCROLLBAR_H
+#include "rofi-animation.h"
 #include "widgets/widget-internal.h"
 #include "widgets/widget.h"
 #include <cairo.h>
@@ -46,6 +47,12 @@ typedef struct _scrollbar {
   unsigned int pos;
   unsigned int pos_length;
   RofiDistance width;
+  /** Material You: spring the handle to its position. */
+  gboolean animated;
+  /** Material You: handle position. */
+  RofiSpring handle_y;
+  /** Material You: handle length. */
+  RofiSpring handle_h;
 } scrollbar;
 
 /**

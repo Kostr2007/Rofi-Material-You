@@ -163,6 +163,12 @@ struct RofiViewState {
   rofi_int_matcher **tokens;
   /** For case-sensitivity */
   gboolean case_sensitive;
+
+  /** Material You: time (us) of the first visible frame, start of the
+   * entrance animation. */
+  gint64 open_time;
+  /** Material You: number of frames drawn. */
+  unsigned int frames;
 };
 /** @} */
 
@@ -247,5 +253,14 @@ int rofi_view_calculate_window_height(struct RofiViewState *state);
 void rofi_view_window_update_size(struct RofiViewState *state);
 void rofi_view_refilter(struct RofiViewState *state);
 void rofi_view_set_window_title(const char *title);
+
+/**
+ * @param state The handle to the view
+ * @param d     The cairo context to draw on.
+ *
+ * Draw the main window, including the Material You entrance animation.
+ * Used by the display backends.
+ */
+void rofi_view_draw_main_window(struct RofiViewState *state, cairo_t *d);
 
 #endif

@@ -122,6 +122,13 @@ scrollbar *scrollbar_create(widget *parent, const char *name) {
   sb->pos = 0;
   sb->pos_length = 4;
 
+  sb->animated = rofi_theme_get_boolean(WIDGET(sb), "handle-animation", FALSE);
+  RofiSpringSpec spec = rofi_spring_spec_parse(
+      rofi_theme_get_string(WIDGET(sb), "handle-spring", NULL),
+      ROFI_SPRING_SPATIAL_DEFAULT);
+  rofi_spring_init(&(sb->handle_y), spec, 0.2);
+  rofi_spring_init(&(sb->handle_h), spec, 0.2);
+
   return sb;
 }
 
@@ -173,6 +180,16 @@ static void scrollbar_draw(widget *wid, cairo_t *draw) {
   y = MIN(y, wh - handle);
   // Never go out of bar.
   height = MAX(2, height);
+  double draw_y = y;
+  double draw_height = height;
+  if (sb->animated) {
+    rofi_spring_set_target(&(sb->handle_y), y);
+    rofi_spring_set_target(&(sb->handle_h), height);
+    rofi_spring_update(&(sb->handle_y));
+    rofi_spring_update(&(sb->handle_h));
+    draw_y = sb->handle_y.value;
+    draw_height = MAX(2.0, sb->handle_h.value);
+  }
   // Cap length;
   rofi_theme_get_color(WIDGET(sb), "handle-color", draw);
 
@@ -180,22 +197,25 @@ static void scrollbar_draw(widget *wid, cairo_t *draw) {
     float x = widget_padding_get_left(wid);
     float width = widget_padding_get_remaining_width(wid);
 
-    float radius = ((width < height) ? width : height) /
+    float radius = ((width < draw_height) ? width : draw_height) /
                    2; // Limit radius to prevent overlap
+    double top = widget_padding_get_top(wid) + draw_y;
 
     // Draw rounded rectangle
     cairo_new_sub_path(draw);
-    cairo_arc(draw, x + width - radius, y + radius, radius, -G_PI_2, 0);
-    cairo_arc(draw, x + width - radius, y + height - radius, radius, 0, G_PI_2);
-    cairo_arc(draw, x + radius, y + height - radius, radius, G_PI_2, G_PI);
-    cairo_arc(draw, x + radius, y + radius, radius, G_PI, 1.5 * G_PI);
+    cairo_arc(draw, x + width - radius, top + radius, radius, -G_PI_2, 0);
+    cairo_arc(draw, x + width - radius, top + draw_height - radius, radius, 0,
+              G_PI_2);
+    cairo_arc(draw, x + radius, top + draw_height - radius, radius, G_PI_2,
+              G_PI);
+    cairo_arc(draw, x + radius, top + radius, radius, G_PI, 1.5 * G_PI);
     cairo_close_path(draw);
 
     cairo_fill(draw);
   } else {
     cairo_rectangle(draw, widget_padding_get_left(wid),
-                    widget_padding_get_top(wid) + y,
-                    widget_padding_get_remaining_width(wid), height);
+                    widget_padding_get_top(wid) + draw_y,
+                    widget_padding_get_remaining_width(wid), draw_height);
     cairo_fill(draw);
   }
 }

@@ -1070,6 +1070,34 @@ void rofi_theme_get_color(const widget *wid, const char *property, cairo_t *d) {
   rofi_theme_get_color_inside(wid, p, property, d);
 }
 
+static gboolean rofi_theme_get_color_value_inside(const widget *wid,
+                                                  Property *p,
+                                                  const char *property,
+                                                  ThemeColor *color) {
+  if (p == NULL) {
+    return FALSE;
+  }
+  if (p->type == P_INHERIT) {
+    if (wid->parent) {
+      ThemeWidget *parent =
+          rofi_theme_find_widget(wid->parent->name, wid->state, FALSE);
+      Property *pv = rofi_theme_find_property(parent, P_COLOR, property, FALSE);
+      return rofi_theme_get_color_value_inside(wid->parent, pv, property,
+                                               color);
+    }
+    return FALSE;
+  }
+  *color = p->value.color;
+  return TRUE;
+}
+
+gboolean rofi_theme_get_color_value(const widget *wid, const char *property,
+                                    ThemeColor *color) {
+  ThemeWidget *wid_find = rofi_theme_find_widget(wid->name, wid->state, FALSE);
+  Property *p = rofi_theme_find_property(wid_find, P_COLOR, property, FALSE);
+  return rofi_theme_get_color_value_inside(wid, p, property, color);
+}
+
 static gboolean rofi_theme_get_image_inside(Property *p, const widget *wid,
                                             const char *property, cairo_t *d) {
   const guint scale = disp_scale ? disp_scale() : 1;

@@ -125,6 +125,16 @@ struct _widget {
   /** Name of widget (used for theming) */
   char *name;
   const char *state;
+
+  /** Material You: skip painting the background, a selection indicator
+   * paints it instead. */
+  gboolean background_suppressed;
+  /** Material You: elevation level (0-5), drawn as a soft shadow. */
+  int elevation;
+  /** Material You: cached shadow mask. */
+  cairo_surface_t *shadow_cache;
+  /** Material You: geometry the shadow mask was rendered for. */
+  int shadow_cache_key[4];
 };
 
 /**

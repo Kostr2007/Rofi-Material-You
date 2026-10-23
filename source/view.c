@@ -30,6 +30,7 @@
 
 #include <config.h>
 #include <locale.h>
+#include <math.h>
 #include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -42,6 +43,7 @@
 
 #include "rofi.h"
 
+#include "rofi-animation.h"
 #include "settings.h"
 #include "timings.h"
 
@@ -2176,6 +2178,148 @@ void rofi_view_switch_mode(RofiViewState *state, Mode *mode) {
 }
 
 /** ------ */
+
+/**
+ * Frame hook for the animation code: redraw the whole active view.
+ */
+static void rofi_view_animation_frame(void) {
+  RofiViewState *state = rofi_view_get_active();
+  if (state == NULL || state->main_window == NULL) {
+    return;
+  }
+  widget_queue_redraw(WIDGET(state->main_window));
+  rofi_view_queue_redraw();
+}
+
+/**
+ * Entrance animations of the window, set with the `open-animation`
+ * property.
+ */
+typedef enum {
+  OPEN_ANIMATION_NONE,
+  OPEN_ANIMATION_FADE,
+  OPEN_ANIMATION_SCALE,
+  OPEN_ANIMATION_EXPAND,
+  OPEN_ANIMATION_SLIDE_DOWN,
+  OPEN_ANIMATION_SLIDE_UP,
+} OpenAnimation;
+
+static OpenAnimation rofi_view_get_open_animation(widget *win) {
+  const char *name = rofi_theme_get_string(win, "open-animation", "none");
+  if (g_ascii_strcasecmp(name, "fade") == 0) {
+    return OPEN_ANIMATION_FADE;
+  }
+  if (g_ascii_strcasecmp(name, "scale") == 0) {
+    return OPEN_ANIMATION_SCALE;
+  }
+  if (g_ascii_strcasecmp(name, "expand") == 0) {
+    return OPEN_ANIMATION_EXPAND;
+  }
+  if (g_ascii_strcasecmp(name, "slide") == 0 ||
+      g_ascii_strcasecmp(name, "slide-down") == 0) {
+    return OPEN_ANIMATION_SLIDE_DOWN;
+  }
+  if (g_ascii_strcasecmp(name, "slide-up") == 0) {
+    return OPEN_ANIMATION_SLIDE_UP;
+  }
+  if (g_ascii_strcasecmp(name, "none") != 0) {
+    g_warning("Unknown open-animation '%s'.", name);
+  }
+  return OPEN_ANIMATION_NONE;
+}
+
+void rofi_view_draw_main_window(RofiViewState *state, cairo_t *d) {
+  widget *win = WIDGET(state->main_window);
+  rofi_animation_begin_frame();
+  gint64 now = rofi_animation_frame_time();
+  rofi_animation_set_frame_hook(rofi_view_animation_frame);
+  // The first frame is painted before the window is mapped, start the
+  // entrance animation with the first frame that reaches the screen.
+  state->frames++;
+  if (state->frames == 1) {
+    rofi_animation_set_epoch(0);
+    rofi_animation_request_frame();
+  } else if (state->open_time == 0) {
+    state->open_time = now;
+    rofi_animation_set_epoch(now);
+  }
+
+  OpenAnimation type = rofi_view_get_open_animation(win);
+  if (type == OPEN_ANIMATION_NONE || !rofi_animation_enabled()) {
+    widget_draw(win, d);
+    return;
+  }
+
+  RofiSpringSpec spatial = rofi_spring_spec_parse(
+      rofi_theme_get_string(win, "open-animation-spring", NULL),
+      ROFI_SPRING_SPATIAL_DEFAULT);
+  RofiSpringSpec effects = rofi_spring_spec(ROFI_SPRING_EFFECTS_SLOW);
+  double t = state->open_time == 0
+                 ? 0.0
+                 : (now - state->open_time) / (double)G_USEC_PER_SEC *
+                       rofi_animation_speed();
+  double duration =
+      MAX(rofi_spring_settle_time(spatial), rofi_spring_settle_time(effects));
+  if (t >= duration) {
+    widget_draw(win, d);
+    return;
+  }
+
+  double p = rofi_spring_step_response(spatial, t);
+  double alpha = CLAMP(rofi_spring_step_response(effects, t), 0.0, 1.0);
+  double w = widget_get_width(win);
+  double h = widget_get_height(win);
+  double from = rofi_theme_get_double(win, "open-animation-scale", 0.92);
+  RofiDistance dist =
+      rofi_theme_get_distance(win, "open-animation-distance", 32);
+  double offset = distance_get_pixel(dist, ROFI_ORIENTATION_VERTICAL);
+
+  // Render into an image first: cairo groups on xcb surfaces lose the
+  // transparency of the shadows drawn inside them.
+  double dsx = 1.0, dsy = 1.0;
+  cairo_user_to_device_distance(d, &dsx, &dsy);
+  dsx = MAX(fabs(dsx), 0.1);
+  dsy = MAX(fabs(dsy), 0.1);
+  cairo_surface_t *img = cairo_image_surface_create(CAIRO_FORMAT_ARGB32,
+                                                    MAX(1, (int)ceil(w * dsx)),
+                                                    MAX(1, (int)ceil(h * dsy)));
+  cairo_surface_set_device_scale(img, dsx, dsy);
+  cairo_t *c = cairo_create(img);
+  widget_draw(win, c);
+  cairo_destroy(c);
+
+  cairo_save(d);
+  switch (type) {
+  case OPEN_ANIMATION_SCALE: {
+    double scale = from + (1.0 - from) * p;
+    cairo_translate(d, w / 2.0, h / 2.0);
+    cairo_scale(d, scale, scale);
+    cairo_translate(d, -w / 2.0, -h / 2.0);
+    break;
+  }
+  case OPEN_ANIMATION_EXPAND: {
+    // Material menus: grow vertically out of the top edge.
+    double scale = MAX(0.01, from * 0.6 + (1.0 - from * 0.6) * p);
+    cairo_scale(d, 1.0, scale);
+    break;
+  }
+  case OPEN_ANIMATION_SLIDE_DOWN:
+    cairo_translate(d, 0, -offset * (1.0 - p));
+    break;
+  case OPEN_ANIMATION_SLIDE_UP:
+    cairo_translate(d, 0, offset * (1.0 - p));
+    break;
+  case OPEN_ANIMATION_FADE:
+  case OPEN_ANIMATION_NONE:
+  default:
+    break;
+  }
+  cairo_set_source_surface(d, img, 0, 0);
+  cairo_paint_with_alpha(d, alpha);
+  cairo_restore(d);
+  cairo_surface_destroy(img);
+  rofi_animation_request_frame();
+}
 
 void rofi_view_update(RofiViewState *state, gboolean qr) {
   proxy->update(state, qr);

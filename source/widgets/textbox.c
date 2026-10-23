@@ -271,6 +271,18 @@ textbox *textbox_create(widget *parent, WidgetType type, const char *name,
     tb->widget.trigger_action = textbox_editable_trigger_action;
   }
 
+  // Material You.
+  tb->cursor_animated =
+      rofi_theme_get_boolean(WIDGET(tb), "cursor-animation", FALSE);
+  rofi_spring_init(&(tb->cursor_x), rofi_spring_spec(ROFI_SPRING_SPATIAL_FAST),
+                   0.2);
+  rofi_spring_init(&(tb->cursor_alpha),
+                   rofi_spring_spec(ROFI_SPRING_EFFECTS_SLOW), 0.005);
+  rofi_spring_snap(&(tb->cursor_alpha), 1.0);
+  tb->color_animated =
+      rofi_theme_get_boolean(WIDGET(tb), "color-animation", FALSE);
+  rofi_color_transition_init(&(tb->text_color));
+
   tb->yalign = rofi_theme_get_double(WIDGET(tb), "vertical-align", yalign);
   tb->yalign = MAX(0, MIN(1.0, tb->yalign));
   tb->xalign = rofi_theme_get_double(WIDGET(tb), "horizontal-align", xalign);
@@ -528,6 +540,13 @@ static void textbox_draw(widget *wid, cairo_t *draw) {
   cairo_set_source_rgb(draw, 0.0, 0.0, 0.0);
   // use text color as fallback for themes that don't specify the cursor color
   rofi_theme_get_color(WIDGET(tb), "text-color", draw);
+  if (tb->color_animated) {
+    ThemeColor target;
+    if (rofi_theme_get_color_value(WIDGET(tb), "text-color", &target)) {
+      ThemeColor c = rofi_color_transition_update(&(tb->text_color), &target);
+      cairo_set_source_rgba(draw, c.red, c.green, c.blue, c.alpha);
+    }
+  }
 
   {
     int rem =
@@ -581,7 +600,26 @@ static void textbox_draw(widget *wid, cairo_t *draw) {
       if ((x + cursor_x) != tb->cursor_x_pos) {
         tb->cursor_x_pos = x + cursor_x;
       }
-      if (tb->blink) {
+      if (tb->cursor_animated) {
+        rofi_spring_set_target(&(tb->cursor_x), x + cursor_x);
+        rofi_spring_set_target(&(tb->cursor_alpha), tb->blink ? 1.0 : 0.0);
+        rofi_spring_update(&(tb->cursor_x));
+        rofi_spring_update(&(tb->cursor_alpha));
+        double opacity = CLAMP(tb->cursor_alpha.value, 0.0, 1.0);
+        if (opacity > 0.0) {
+          cairo_save(draw);
+          rofi_theme_get_color(WIDGET(tb), "cursor-color", draw);
+          double r = 0, g = 0, bl = 0, a = 1.0;
+          cairo_pattern_get_rgba(cairo_get_source(draw), &r, &g, &bl, &a);
+          cairo_set_source_rgba(draw, r, g, bl, a * opacity);
+          // Rounded cursor, as in Material text fields.
+          rofi_rounded_rectangle(draw, tb->cursor_x.value, y + cursor_y,
+                                 cursor_pixel_width, cursor_height,
+                                 cursor_pixel_width / 2.0);
+          cairo_fill(draw);
+          cairo_restore(draw);
+        }
+      } else if (tb->blink) {
         // This save/restore state is necessary to render the text in the
         // correct color when `cursor-color` is set
         cairo_save(draw);

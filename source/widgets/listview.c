@@ -27,14 +27,17 @@
 
 #include "config.h"
 #include <glib.h>
+#include <math.h>
 #include <widgets/box.h>
 #include <widgets/icon.h>
+#include <widgets/indicator.h>
 #include <widgets/listview.h>
 #include <widgets/scrollbar.h>
 #include <widgets/textbox.h>
 #include <widgets/widget.h>
 
 #include "helper.h"
+#include "rofi-animation.h"
 #include "settings.h"
 #include "theme.h"
 #include "view.h"
@@ -132,6 +135,26 @@ struct _listview {
     MoveDirection direction;
     unsigned int cur_visible;
   } barview;
+
+  /** Material You: selection indicator. */
+  RofiIndicator indicator;
+  /** Material You: staggered entrance of the elements. */
+  struct {
+    gboolean enabled;
+    gboolean done;
+    gint64 start;
+    double stagger;
+    double distance;
+  } entrance;
+  /** Material You: ripple on click. */
+  struct {
+    gboolean enabled;
+    gboolean active;
+    gint64 start;
+    double x;
+    double y;
+    unsigned int row;
+  } ripple;
 };
 /**
  * Names used for theming the elements in the listview.
@@ -369,6 +392,141 @@ static void update_element(listview *lv, unsigned int tb, unsigned int index,
   }
 }
 
+/**
+ * Draw one element, with the entrance animation while the view opens.
+ */
+static void listview_draw_element(listview *lv, unsigned int i, cairo_t *draw) {
+  widget *w = WIDGET(lv->boxes[i].box);
+  if (!lv->entrance.enabled || lv->entrance.done) {
+    widget_draw(w, draw);
+    return;
+  }
+  if (lv->entrance.start == 0) {
+    // Not visible yet.
+    return;
+  }
+  RofiSpringSpec spatial = rofi_spring_spec(ROFI_SPRING_SPATIAL_DEFAULT);
+  RofiSpringSpec effects = rofi_spring_spec(ROFI_SPRING_EFFECTS_DEFAULT);
+  double t = (rofi_animation_frame_time() - lv->entrance.start) /
+                 (double)G_USEC_PER_SEC * rofi_animation_speed() -
+             i * lv->entrance.stagger;
+  if (t >=
+      MAX(rofi_spring_settle_time(spatial), rofi_spring_settle_time(effects))) {
+    widget_draw(w, draw);
+    return;
+  }
+  rofi_animation_request_frame();
+  if (t <= 0.0) {
+    // Not started yet, keep the redraw flag so it gets painted later.
+    return;
+  }
+  double p = rofi_spring_step_response(spatial, t);
+  double alpha = CLAMP(rofi_spring_step_response(effects, t), 0.0, 1.0);
+  double offset = lv->entrance.distance * (1.0 - p);
+  if (lv->type == BARVIEW) {
+    widget_draw_with_alpha(w, draw, offset, 0, alpha);
+  } else {
+    widget_draw_with_alpha(w, draw, 0, lv->reverse ? -offset : offset, alpha);
+  }
+}
+
+/**
+ * Draw the ripple of the last click.
+ */
+static void listview_draw_ripple(listview *lv, unsigned int count,
+                                 cairo_t *draw) {
+  if (!lv->ripple.active) {
+    return;
+  }
+  if (lv->ripple.row >= count || !rofi_animation_enabled()) {
+    lv->ripple.active = FALSE;
+    return;
+  }
+  RofiSpringSpec grow = rofi_spring_spec(ROFI_SPRING_EFFECTS_SLOW);
+  RofiSpringSpec fade = rofi_spring_spec(ROFI_SPRING_EFFECTS_DEFAULT);
+  const double hold = 0.15;
+  double t = (rofi_animation_frame_time() - lv->ripple.start) /
+             (double)G_USEC_PER_SEC * rofi_animation_speed();
+  if (t > hold + rofi_spring_settle_time(fade)) {
+    lv->ripple.active = FALSE;
+    return;
+  }
+  rofi_animation_request_frame();
+
+  widget *row = WIDGET(lv->boxes[lv->ripple.row].box);
+  double x, y, w, h, r;
+  if (!widget_get_background_rect(row, &x, &y, &w, &h, &r)) {
+    return;
+  }
+  ThemeColor color = {1.0, 1.0, 1.0, 0.12};
+  if (!rofi_theme_get_color_value(WIDGET(lv), "ripple-color", &color)) {
+    if (lv->boxes[lv->ripple.row].textbox != NULL &&
+        rofi_theme_get_color_value(WIDGET(lv->boxes[lv->ripple.row].textbox),
+                                   "text-color", &color)) {
+      color.alpha = 0.12;
+    }
+  }
+  double dx = MAX(fabs(lv->ripple.x - x), fabs(lv->ripple.x - x - w));
+  double dy = MAX(fabs(lv->ripple.y - y), fabs(lv->ripple.y - y - h));
+  double max_radius = sqrt(dx * dx + dy * dy);
+  double radius =
+      max_radius * CLAMP(rofi_spring_step_response(grow, t), 0.0, 1.0);
+  double opacity =
+      1.0 - CLAMP(rofi_spring_step_response(fade, t - hold), 0.0, 1.0);
+
+  cairo_save(draw);
+  rofi_rounded_rectangle(draw, x, y, w, h, r);
+  cairo_clip(draw);
+  cairo_set_source_rgba(draw, color.red, color.green, color.blue,
+                        color.alpha * opacity);
+  cairo_new_sub_path(draw);
+  cairo_arc(draw, lv->ripple.x, lv->ripple.y, radius, 0, 2 * G_PI);
+  cairo_fill(draw);
+  cairo_restore(draw);
+}
+
+/**
+ * Draw the visible elements: indicator below, ripple on top.
+ */
+static void listview_draw_elements(listview *lv, unsigned int count,
+                                   cairo_t *draw) {
+  if (lv->entrance.enabled && !lv->entrance.done) {
+    if (!rofi_animation_enabled()) {
+      lv->entrance.done = TRUE;
+    } else if (lv->entrance.start == 0) {
+      // Start with the first visible frame that has elements.
+      if (count > 0 && rofi_animation_get_epoch() != 0) {
+        lv->entrance.start = rofi_animation_frame_time();
+      } else {
+        rofi_animation_request_frame();
+      }
+    } else {
+      double t = (rofi_animation_frame_time() - lv->entrance.start) /
+                 (double)G_USEC_PER_SEC * rofi_animation_speed();
+      double settle = MAX(rofi_spring_settle_time(
+                              rofi_spring_spec(ROFI_SPRING_SPATIAL_DEFAULT)),
+                          rofi_spring_settle_time(
+                              rofi_spring_spec(ROFI_SPRING_EFFECTS_DEFAULT)));
+      if (t > settle + lv->entrance.stagger * MAX(1u, count)) {
+        lv->entrance.done = TRUE;
+      }
+    }
+  }
+  if (lv->indicator.enabled) {
+    widget *selected = NULL;
+    if (lv->selected >= lv->last_offset &&
+        (lv->selected - lv->last_offset) < count) {
+      selected = WIDGET(lv->boxes[lv->selected - lv->last_offset].box);
+    }
+    rofi_indicator_set_selected(&(lv->indicator), selected);
+    rofi_indicator_draw(&(lv->indicator), draw);
+  }
+  for (unsigned int i = 0; i < count; i++) {
+    listview_draw_element(lv, i, draw);
+  }
+  listview_draw_ripple(lv, count, draw);
+}
+
 static void barview_draw(widget *wid, cairo_t *draw) {
   unsigned int offset = 0;
   listview *lv = (listview *)wid;
@@ -402,7 +560,6 @@ static void barview_draw(widget *wid, cairo_t *draw) {
           widget_move(WIDGET(lv->boxes[i].box), left_offset, top_offset);
           widget_resize(WIDGET(lv->boxes[i].box), twidth, lv->element_height);
 
-          widget_draw(WIDGET(lv->boxes[i].box), draw);
           width -= twidth + spacing_hori;
           left_offset += twidth + spacing_hori;
           first = FALSE;
@@ -424,7 +581,6 @@ static void barview_draw(widget *wid, cairo_t *draw) {
           widget_move(WIDGET(lv->boxes[i].box), right_offset, top_offset);
           widget_resize(WIDGET(lv->boxes[i].box), twidth, lv->element_height);
 
-          widget_draw(WIDGET(lv->boxes[i].box), draw);
           width -= twidth + spacing_hori;
           right_offset -= spacing_hori;
           first = FALSE;
@@ -443,9 +599,9 @@ static void barview_draw(widget *wid, cairo_t *draw) {
     } else {
       for (unsigned int i = 0; i < lv->barview.cur_visible; i++) {
         update_element(lv, i, i + offset, TRUE);
-        widget_draw(WIDGET(lv->boxes[i].box), draw);
       }
     }
+    listview_draw_elements(lv, lv->barview.cur_visible, draw);
   }
 }
 
@@ -542,15 +698,14 @@ static void listview_draw(widget *wid, cairo_t *draw) {
                         lv->element_height);
         }
         update_element(lv, i, i + offset, TRUE);
-        widget_draw(WIDGET(lv->boxes[i].box), draw);
       }
       lv->rchanged = FALSE;
     } else {
       for (unsigned int i = 0; i < max; i++) {
         update_element(lv, i, i + offset, TRUE);
-        widget_draw(WIDGET(lv->boxes[i].box), draw);
       }
     }
+    listview_draw_elements(lv, max, draw);
   }
   widget_draw(WIDGET(lv->scrollbar), draw);
 }
@@ -591,6 +746,7 @@ static void listview_recompute_elements(listview *lv) {
     lv->cur_columns = lv->menu_columns;
   }
   for (unsigned int i = newne; i < lv->cur_elements; i++) {
+    rofi_indicator_forget(&(lv->indicator), WIDGET(lv->boxes[i].box));
     widget_free(WIDGET(lv->boxes[i].box));
   }
   lv->boxes = g_realloc(lv->boxes, newne * sizeof(_listview_row));
@@ -744,9 +900,10 @@ listview_trigger_action(widget *wid, MouseBindingListviewAction action,
   return WIDGET_TRIGGER_ACTION_RESULT_HANDLED;
 }
 
-static WidgetTriggerActionResult listview_element_trigger_action(
-    widget *wid, MouseBindingListviewElementAction action, G_GNUC_UNUSED gint x,
-    G_GNUC_UNUSED gint y, void *user_data) {
+static WidgetTriggerActionResult
+listview_element_trigger_action(widget *wid,
+                                MouseBindingListviewElementAction action,
+                                gint x, gint y, void *user_data) {
   listview *lv = (listview *)user_data;
   unsigned int max = MIN(lv->cur_elements, lv->req_elements - lv->last_offset);
   unsigned int i;
@@ -754,6 +911,14 @@ static WidgetTriggerActionResult listview_element_trigger_action(
   }
   if (i == max) {
     return WIDGET_TRIGGER_ACTION_RESULT_IGNORED;
+  }
+  if (lv->ripple.enabled && rofi_animation_enabled()) {
+    lv->ripple.active = TRUE;
+    lv->ripple.start = g_get_monotonic_time();
+    lv->ripple.row = i;
+    lv->ripple.x = widget_get_x_pos(wid) + x;
+    lv->ripple.y = widget_get_y_pos(wid) + y;
+    widget_queue_redraw(WIDGET(lv));
   }
 
   gboolean custom = FALSE;
@@ -853,6 +1018,20 @@ listview *listview_create(widget *parent, const char *name,
   } else {
     listview_set_show_scrollbar(lv, FALSE);
   }
+
+  // Material You.
+  rofi_indicator_init(&(lv->indicator), WIDGET(lv));
+  lv->entrance.enabled =
+      rofi_theme_get_boolean(WIDGET(lv), "entrance-animation", FALSE);
+  lv->entrance.stagger =
+      MAX(0, rofi_theme_get_integer(WIDGET(lv), "entrance-stagger", 30)) /
+      1000.0;
+  RofiDistance distance =
+      rofi_theme_get_distance(WIDGET(lv), "entrance-distance", 16);
+  lv->entrance.distance = distance_get_pixel(
+      distance, lv->type == BARVIEW ? ROFI_ORIENTATION_HORIZONTAL
+                                    : ROFI_ORIENTATION_VERTICAL);
+  lv->ripple.enabled = rofi_theme_get_boolean(WIDGET(lv), "ripple", FALSE);
   return lv;
 }
 

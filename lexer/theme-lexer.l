@@ -465,7 +465,9 @@ if ( queue == NULL ) {
           rofi_add_warning_message ( g_string_new ( str ) );
           g_free ( str );
         } else {
-          g_warning("Trying to parse optional theme: '%s', Error: %s",
+          /* A missing optional import is expected (for example the
+           * generated Material You palette), do not warn. */
+          g_debug("Trying to parse optional theme: '%s', Error: %s",
             filename, strerror(errno));
         }
         g_free(filename);

@@ -189,4 +189,10 @@ Settings config = {
     /** Whether to enable imdkit, see #2123 */
     .enable_imdkit = TRUE,
     .fallback_icon_themes = "Adwaita,gnome",
+
+    /** Material You animations */
+    .animations = TRUE,
+    .motion_scheme = "expressive",
+    .animation_speed = "1.0",
+    .animation_fps = 120,
 };

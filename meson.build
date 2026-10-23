@@ -239,8 +239,11 @@ rofi_sources = files(
         'source/rofi-icon-fetcher.c',
         'source/css-colors.c',
         'source/view.c',
+        'source/rofi-animation.c',
+        'source/rofi-shapes.c',
         'source/widgets/box.c',
         'source/widgets/icon.c',
+        'source/widgets/indicator.c',
         'source/widgets/container.c',
         'source/widgets/widget.c',
         'source/widgets/textbox.c',
@@ -411,7 +414,29 @@ install_data(
     'themes/iggy.jpg',
 		'themes/transparent.rasi',
     'themes/fullscreen-preview.rasi',
+    'themes/material-you.rasi',
+    'themes/material-you-light.rasi',
+    'themes/material-you-grid.rasi',
+    'themes/material-you-grid-light.rasi',
     install_dir: themedir
+)
+
+# Material You: shared theme parts, palette generator and matugen template.
+install_data(
+    'themes/material-you/material-you-base.rasinc',
+    'themes/material-you/material-you-grid.rasinc',
+    'themes/material-you/material-you-dark.rasinc',
+    'themes/material-you/material-you-light.rasinc',
+    install_dir: join_paths(themedir, 'material-you')
+)
+install_data(
+    'script/rofi-myou',
+    install_dir: get_option('bindir'),
+    install_mode: 'rwxr-xr-x'
+)
+install_data(
+    'templates/matugen-rofi.rasi',
+    install_dir: join_paths(get_option('datadir'), 'rofi', 'material-you')
 )
 
 pkg = import('pkgconfig')
@@ -461,6 +486,8 @@ test('widget test', executable('widget.test', [
     ],
     objects: rofi.extract_objects([
         'source/widgets/widget.c',
+        'source/widgets/indicator.c',
+        'source/rofi-animation.c',
         'source/widgets/textbox.c',
         'source/theme.c',
         'source/css-colors.c',
@@ -480,6 +507,8 @@ test('box test', executable('box.test', [
     ],
     objects: rofi.extract_objects([
         'source/widgets/widget.c',
+        'source/widgets/indicator.c',
+        'source/rofi-animation.c',
         'source/widgets/box.c',
         'source/theme.c',
         'source/css-colors.c',
@@ -498,6 +527,8 @@ test('scrollbar test', executable('scrollbar.test', [
     ],
     objects: rofi.extract_objects([
         'source/widgets/widget.c',
+        'source/widgets/indicator.c',
+        'source/rofi-animation.c',
         'source/widgets/scrollbar.c',
         'source/theme.c',
         'source/css-colors.c',
@@ -516,12 +547,25 @@ test('textbox test', executable('textbox.test', [
     ],
     objects: rofi.extract_objects([
         'source/widgets/widget.c',
+        'source/widgets/indicator.c',
+        'source/rofi-animation.c',
         'source/widgets/textbox.c',
         'source/theme.c',
         'source/css-colors.c',
         'source/rofi-types.c',
         'source/css-colors.c',
         'source/helper.c',
+        'config/config.c',
+    ]),
+    dependencies: deps,
+))
+
+test('animation test', executable('animation.test', [
+        'test/animation-test.c',
+    ],
+    objects: rofi.extract_objects([
+        'source/rofi-animation.c',
+        'source/rofi-shapes.c',
         'config/config.c',
     ]),
     dependencies: deps,

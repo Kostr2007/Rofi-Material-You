@@ -29,6 +29,7 @@
 #define ROFI_TEXTBOX_H
 
 #include "keyb.h"
+#include "rofi-animation.h"
 #include "widgets/widget-internal.h"
 #include "widgets/widget.h"
 #include <cairo.h>
@@ -84,6 +85,17 @@ typedef struct {
   const char *password_mask_char;
 
   const char *theme_name;
+
+  /** Material You: cursor glides to its position and fades when blinking. */
+  gboolean cursor_animated;
+  /** Material You: cursor x position. */
+  RofiSpring cursor_x;
+  /** Material You: cursor opacity. */
+  RofiSpring cursor_alpha;
+  /** Material You: cross-fade the text color between states. */
+  gboolean color_animated;
+  /** Material You: text color. */
+  RofiColorTransition text_color;
 } textbox;
 
 /**

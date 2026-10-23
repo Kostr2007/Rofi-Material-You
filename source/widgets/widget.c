@@ -58,6 +58,8 @@ void widget_init(widget *wid, widget *parent, WidgetType type,
   wid->border_antialiasing = rofi_theme_get_boolean(wid, "border-aa", TRUE);
   wid->border_disable_nvidia_workaround =
       rofi_theme_get_boolean(wid, "border-disable-nvidia-workaround", FALSE);
+
+  wid->elevation = CLAMP(rofi_theme_get_integer(wid, "elevation", 0), 0, 5);
 }
 
 void widget_set_state(widget *wid, const char *state) {
@@ -70,6 +72,7 @@ void widget_set_state(widget *wid, const char *state) {
     wid->border = rofi_theme_get_padding(wid, "border", wid->def_border);
     wid->border_radius =
         rofi_theme_get_padding(wid, "border-radius", wid->def_border_radius);
+    wid->elevation = CLAMP(rofi_theme_get_integer(wid, "elevation", 0), 0, 5);
     if (wid->set_state != NULL) {
       wid->set_state(wid, state);
     }
@@ -135,6 +138,163 @@ void widget_set_enabled(widget *wid, gboolean enabled) {
     widget_update(wid->parent);
     widget_queue_redraw(wid);
   }
+}
+
+/**
+ * Material 3 elevation tokens: two shadows per level,
+ * {y offset, blur, spread, opacity}.
+ */
+static const double elevation_tokens[6][2][4] = {
+    {{0, 0, 0, 0.0}, {0, 0, 0, 0.0}},    {{1, 2, 0, 0.30}, {1, 3, 1, 0.15}},
+    {{1, 2, 0, 0.30}, {2, 6, 2, 0.15}},  {{1, 3, 0, 0.30}, {4, 8, 3, 0.15}},
+    {{2, 3, 0, 0.30}, {6, 10, 4, 0.15}}, {{4, 4, 0, 0.30}, {8, 12, 6, 0.15}},
+};
+
+void rofi_rounded_rectangle(cairo_t *d, double x, double y, double w, double h,
+                            double r) {
+  r = MAX(0.0, MIN(r, MIN(w, h) / 2.0));
+  cairo_new_sub_path(d);
+  if (r <= 0.0) {
+    cairo_rectangle(d, x, y, w, h);
+    return;
+  }
+  cairo_arc(d, x + w - r, y + r, r, -G_PI_2, 0);
+  cairo_arc(d, x + w - r, y + h - r, r, 0, G_PI_2);
+  cairo_arc(d, x + r, y + h - r, r, G_PI_2, G_PI);
+  cairo_arc(d, x + r, y + r, r, G_PI, 1.5 * G_PI);
+  cairo_close_path(d);
+}
+
+/**
+ * One box blur pass over an A8 surface, horizontal or vertical.
+ */
+static void shadow_box_blur(unsigned char *data, int stride, int w, int h,
+                            int radius, gboolean horizontal) {
+  if (radius < 1) {
+    return;
+  }
+  int len = horizontal ? w : h;
+  int lines = horizontal ? h : w;
+  int step = horizontal ? 1 : stride;
+  int lstep = horizontal ? stride : 1;
+  unsigned char *tmp = g_malloc(len);
+  int div = 2 * radius + 1;
+  for (int l = 0; l < lines; l++) {
+    unsigned char *line = data + l * lstep;
+    int sum = 0;
+    for (int i = -radius; i <= radius; i++) {
+      int k = CLAMP(i, 0, len - 1);
+      sum += line[k * step];
+    }
+    for (int i = 0; i < len; i++) {
+      tmp[i] = sum / div;
+      int out = CLAMP(i - radius, 0, len - 1);
+      int in = CLAMP(i + radius + 1, 0, len - 1);
+      sum += line[in * step] - line[out * step];
+    }
+    for (int i = 0; i < len; i++) {
+      line[i * step] = tmp[i];
+    }
+  }
+  g_free(tmp);
+}
+
+/**
+ * Render (or reuse) the shadow mask of the widget: both elevation shadows
+ * blurred into one A8 surface, with their opacity baked in.
+ */
+static cairo_surface_t *widget_shadow_mask(widget *wid, int w, int h,
+                                           int radius, int pad) {
+  if (wid->shadow_cache != NULL && wid->shadow_cache_key[0] == w &&
+      wid->shadow_cache_key[1] == h && wid->shadow_cache_key[2] == radius &&
+      wid->shadow_cache_key[3] == wid->elevation) {
+    return wid->shadow_cache;
+  }
+  if (wid->shadow_cache != NULL) {
+    cairo_surface_destroy(wid->shadow_cache);
+    wid->shadow_cache = NULL;
+  }
+  int sw = w + 2 * pad;
+  int sh = h + 2 * pad;
+  cairo_surface_t *mask = cairo_image_surface_create(CAIRO_FORMAT_A8, sw, sh);
+  for (int i = 0; i < 2; i++) {
+    const double *tok = elevation_tokens[wid->elevation][i];
+    cairo_surface_t *layer =
+        cairo_image_surface_create(CAIRO_FORMAT_A8, sw, sh);
+    cairo_t *c = cairo_create(layer);
+    cairo_set_source_rgba(c, 0, 0, 0, 1.0);
+    rofi_rounded_rectangle(c, pad - tok[2], pad - tok[2] + tok[0],
+                           w + 2 * tok[2], h + 2 * tok[2], radius + tok[2]);
+    cairo_fill(c);
+    cairo_destroy(c);
+    cairo_surface_flush(layer);
+    // Three box blurs approximate a gaussian with sigma = blur / 2.
+    double sigma = tok[1] / 2.0;
+    int box = (int)floor(sqrt(4.0 * sigma * sigma + 1.0) / 2.0 + 0.5);
+    unsigned char *data = cairo_image_surface_get_data(layer);
+    int stride = cairo_image_surface_get_stride(layer);
+    for (int pass = 0; pass < 3; pass++) {
+      shadow_box_blur(data, stride, sw, sh, box, TRUE);
+      shadow_box_blur(data, stride, sw, sh, box, FALSE);
+    }
+    cairo_surface_mark_dirty(layer);
+    c = cairo_create(mask);
+    cairo_set_source_rgba(c, 0, 0, 0, tok[3]);
+    cairo_mask_surface(c, layer, 0, 0);
+    cairo_destroy(c);
+    cairo_surface_destroy(layer);
+  }
+  wid->shadow_cache = mask;
+  wid->shadow_cache_key[0] = w;
+  wid->shadow_cache_key[1] = h;
+  wid->shadow_cache_key[2] = radius;
+  wid->shadow_cache_key[3] = wid->elevation;
+  return mask;
+}
+
+static void widget_draw_shadow(widget *wid, cairo_t *d, double x, double y,
+                               double w, double h, double radius) {
+  const int pad = 20;
+  if (w < 1 || h < 1) {
+    return;
+  }
+  cairo_surface_t *mask =
+      widget_shadow_mask(wid, (int)ceil(w), (int)ceil(h), (int)radius, pad);
+  cairo_save(d);
+  cairo_reset_clip(d);
+  cairo_set_source_rgba(d, 0, 0, 0, 1.0);
+  rofi_theme_get_color(wid, "shadow-color", d);
+  cairo_mask_surface(d, mask, x - pad, y - pad);
+  cairo_restore(d);
+}
+
+void widget_set_background_suppressed(widget *wid, gboolean suppressed) {
+  if (wid == NULL) {
+    return;
+  }
+  wid->background_suppressed = suppressed;
+}
+
+gboolean widget_get_background_rect(widget *wid, double *x, double *y,
+                                    double *w, double *h, double *radius) {
+  if (wid == NULL || !wid->enabled || wid->w < 1 || wid->h < 1) {
+    return FALSE;
+  }
+  const int margin_left =
+      distance_get_pixel(wid->margin.left, ROFI_ORIENTATION_HORIZONTAL);
+  const int margin_top =
+      distance_get_pixel(wid->margin.top, ROFI_ORIENTATION_VERTICAL);
+  const int margin_right =
+      distance_get_pixel(wid->margin.right, ROFI_ORIENTATION_HORIZONTAL);
+  const int margin_bottom =
+      distance_get_pixel(wid->margin.bottom, ROFI_ORIENTATION_VERTICAL);
+  *x = wid->x + margin_left;
+  *y = wid->y + margin_top;
+  *w = MAX(0, wid->w - margin_left - margin_right);
+  *h = MAX(0, wid->h - margin_top - margin_bottom);
+  int r = distance_get_pixel(wid->border_radius.top, ROFI_ORIENTATION_VERTICAL);
+  *radius = MIN((double)r, MIN(*w, *h) / 2.0);
+  return TRUE;
 }
 
 void widget_draw(widget *wid, cairo_t *d) {
@@ -205,6 +365,13 @@ void widget_draw(widget *wid, cairo_t *d) {
     cairo_translate(d, wid->x, wid->y);
     cairo_set_line_width(d, 0);
 
+    if (wid->elevation > 0) {
+      widget_draw_shadow(
+          wid, d, margin_left, margin_top, wid->w - margin_left - margin_right,
+          wid->h - margin_top - margin_bottom,
+          MAX(MAX(radius_tl, radius_tr), MAX(radius_bl, radius_br)));
+    }
+
     // Outer outline outlines
     double x1, y1, x2, y2;
     x1 = margin_left + left / 2.0, y1 = margin_top + top / 2.0,
@@ -241,11 +408,13 @@ void widget_draw(widget *wid, cairo_t *d) {
     }
     cairo_close_path(d);
 
-    cairo_set_source_rgba(d, 1.0, 1.0, 1.0, 1.0);
-    rofi_theme_get_color(wid, "background-color", d);
-    cairo_fill_preserve(d);
-    if (rofi_theme_get_image(wid, "background-image", d)) {
+    if (!wid->background_suppressed) {
+      cairo_set_source_rgba(d, 1.0, 1.0, 1.0, 1.0);
+      rofi_theme_get_color(wid, "background-color", d);
       cairo_fill_preserve(d);
+      if (rofi_theme_get_image(wid, "background-image", d)) {
+        cairo_fill_preserve(d);
+      }
     }
     cairo_clip(d);
 
@@ -422,12 +591,52 @@ void widget_draw(widget *wid, cairo_t *d) {
   }
 }
 
+void widget_draw_with_alpha(widget *wid, cairo_t *d, double dx, double dy,
+                            double alpha) {
+  if (wid == NULL || !wid->enabled || wid->w < 1 || wid->h < 1) {
+    return;
+  }
+  if (alpha >= 1.0 && dx == 0.0 && dy == 0.0) {
+    widget_draw(wid, d);
+    return;
+  }
+  // Paint at the device resolution, including any scale the caller set.
+  double sx = 1.0, sy = 1.0;
+  cairo_user_to_device_distance(d, &sx, &sy);
+  sx = MAX(fabs(sx), 0.1);
+  sy = MAX(fabs(sy), 0.1);
+  int iw = (int)ceil(wid->w * sx);
+  int ih = (int)ceil(wid->h * sy);
+  cairo_surface_t *img =
+      cairo_image_surface_create(CAIRO_FORMAT_ARGB32, MAX(1, iw), MAX(1, ih));
+  cairo_surface_set_device_scale(img, sx, sy);
+  cairo_t *c = cairo_create(img);
+  short x = wid->x, y = wid->y;
+  // Draw at the origin of the image.
+  wid->x = 0;
+  wid->y = 0;
+  widget_draw(wid, c);
+  wid->x = x;
+  wid->y = y;
+  cairo_destroy(c);
+
+  cairo_save(d);
+  cairo_set_source_surface(d, img, x + dx, y + dy);
+  cairo_paint_with_alpha(d, CLAMP(alpha, 0.0, 1.0));
+  cairo_restore(d);
+  cairo_surface_destroy(img);
+}
+
 void widget_free(widget *wid) {
   if (wid == NULL) {
     return;
   }
   if (wid->name != NULL) {
     g_free(wid->name);
+  }
+  if (wid->shadow_cache != NULL) {
+    cairo_surface_destroy(wid->shadow_cache);
+    wid->shadow_cache = NULL;
   }
   if (wid->free != NULL) {
     wid->free(wid);
