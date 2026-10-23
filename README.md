@@ -1,3 +1,225 @@
+# Rofi Material You
+
+Material You (Material 3 Expressive) для [rofi](https://github.com/davatorium/rofi): пружинистые
+анимации, «живой» индикатор выделения, формы M3 Expressive для иконок и палитра, сгенерированная
+из обоев. Идеи и токены взяты из [M3E](https://matraic.github.io/m3e/#/getting-started/overview.html)
+и Material 3 и перенесены в сам движок отрисовки rofi. Подключается к NixOS через flake.
+
+*Material You for rofi: spring animations, a stretchy selection indicator, Material 3 Expressive
+shapes and palettes generated from your wallpaper, built into rofi itself. Ships as a Nix flake
+(package, home-manager and NixOS modules).*
+
+![motion](docs/screenshots/motion.gif)
+
+| Тёмная | Светлая | Сетка приложений (палитра из зелёных обоев) |
+|---|---|---|
+| ![dark](docs/screenshots/dark.png) | ![light](docs/screenshots/light.png) | ![grid](docs/screenshots/grid.gif) |
+
+**Это изменённая версия rofi.** Она распространяется под той же лицензией MIT (см. [COPYING](COPYING)),
+все уведомления об авторских правах rofi сохранены. Изменения сделаны в октябре 2026 года
+[kostr2007](https://github.com/Kostr2007) с помощью ИИ-ассистента (Claude) и перечислены ниже.
+Исходный rofi: [davatorium/rofi](https://github.com/davatorium/rofi), импортирован с коммита
+`1ad1df6` (2.0.0-dev).
+
+Похожие проекты: [KeliBoard Material You](https://github.com/Kostr2007/Keliboard-Material-You)
+(клавиатура) и [Material You Terminal](https://github.com/Kostr2007/Material-You-Terminal)
+(kitty, fish, starship, fastfetch). С терминалом rofi может делить одну палитру, см. ниже.
+
+## Что добавлено
+
+Полное описание каждого свойства, опции и формы: **[docs/MATERIAL-YOU.md](docs/MATERIAL-YOU.md)**.
+
+| | |
+|---|---|
+| **Пружины M3 Expressive** | Новый движок анимаций: каждое анимированное значение — затухающая пружина (точное решение уравнения, не «easing-кривая»). Токены движения Material 3: `spatial-fast/default/slow` (с отскоком) и `effects-fast/default/slow` (без перелёта), две схемы — `expressive` и `standard`. Общий код для X11 и Wayland (проверено в X11). |
+| **Индикатор выделения** | Вместо того чтобы каждая строка красила свой фон, список рисует одну «пилюлю», которая перелетает к новому элементу. Передний край летит быстрее заднего, поэтому индикатор растягивается в пути и пружинисто садится на место. То же для вкладок режимов (`mode-switcher`), для сетки и горизонтального списка. |
+| **Формы M3 Expressive** | 19 форм: `circle`, `square`, `squircle`, `arch`, `cookie-4…12`, `clover-4/8`, `flower`, `sunny`, `very-sunny`, `soft-burst`, `burst`, `triangle`, `pentagon`, `gem`. Подложка или маска иконки; при выделении форма **морфится** (например, круг → cookie-9), поворачивается и «подпрыгивает». |
+| **Появление окна** | `open-animation`: `scale`, `expand` (как меню M3), `slide-down`, `slide-up`, `fade`. Отсчёт идёт с первого кадра, реально попавшего на экран. |
+| **Каскад элементов** | Строки появляются по очереди с небольшим сдвигом и затуханием (`entrance-animation`). |
+| **Ripple** | Волна от точки клика по элементу (состояние «pressed» Material). |
+| **Elevation** | Мягкие тени по токенам высоты M3 (уровни 0–5) для любого виджета. |
+| **Мелочи** | Курсор плавно скользит и мигает с затуханием, ползунок прокрутки на пружине, плавная смена цвета текста между состояниями. |
+| **Темы** | `material-you`, `material-you-light` (поиск в стиле M3 search bar, вкладки, список) и `material-you-grid`, `material-you-grid-light` (сетка как в лаунчере Android). Цвета — роли M3 (`@primary`, `@surface-container`, …). |
+| **Палитра из обоев** | `rofi-myou apply ~/wall.jpg` генерирует роли через [matugen](https://github.com/InioX/matugen) (алгоритм HCT, те же схемы, что у остального рабочего стола) и пишет их в `~/.config/rofi/material-you/colors.rasi`, который подхватывают все темы. Есть шаблон для matugen. |
+| **Nix flake** | Пакет, overlay, модули home-manager и NixOS, проверки `nix flake check`. Палитра может собираться при сборке, браться из Material-You-Terminal или обновляться на лету при смене обоев. |
+
+Все новые эффекты включаются свойствами темы: **старые темы rofi выглядят точно так же, как раньше.**
+Выключить анимации: `-no-animations`, `configuration { animations: false; }` или `ROFI_NO_ANIMATION=1`.
+
+## Быстрый старт
+
+```sh
+rofi -show drun -theme material-you          # тёмная
+rofi -show drun -theme material-you-light    # светлая
+rofi -show drun -theme material-you-grid     # сетка приложений
+rofi-myou apply ~/Pictures/wallpaper.jpg     # палитра из обоев (нужен matugen)
+rofi-myou apply '#3F6FD8' -t scheme-expressive
+```
+
+## Установка через Nix flake
+
+### 1. Вход во flake
+
+```nix
+{
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    home-manager.url = "github:nix-community/home-manager";
+    home-manager.inputs.nixpkgs.follows = "nixpkgs";
+
+    rofi-material-you.url = "github:Kostr2007/Rofi-Material-You";
+    rofi-material-you.inputs.nixpkgs.follows = "nixpkgs";
+  };
+}
+```
+
+### 2a. NixOS + home-manager как модуль NixOS
+
+```nix
+outputs = { nixpkgs, home-manager, rofi-material-you, ... }: {
+  nixosConfigurations.my-pc = nixpkgs.lib.nixosSystem {
+    system = "x86_64-linux";
+    modules = [
+      ./configuration.nix
+      home-manager.nixosModules.home-manager
+      rofi-material-you.nixosModules.default   # подключает HM-модуль всем пользователям
+
+      {
+        programs.rofi-material-you.enable = true;  # пакет и шрифты в системе
+
+        home-manager.users.kostr = {
+          programs.rofi-material-you = {
+            enable = true;
+            source.image = ./wallpapers/current.jpg;   # или source.color = "#6750A4";
+            layout = "list";                           # или "grid"
+          };
+        };
+      }
+    ];
+  };
+};
+```
+
+### 2b. Только home-manager
+
+```nix
+homeConfigurations.kostr = home-manager.lib.homeManagerConfiguration {
+  pkgs = nixpkgs.legacyPackages.x86_64-linux;
+  modules = [
+    rofi-material-you.homeManagerModules.default
+    { programs.rofi-material-you.enable = true; }
+  ];
+};
+```
+
+### 2c. Только пакет
+
+```nix
+environment.systemPackages = [ rofi-material-you.packages.${pkgs.system}.default ];
+# или через overlay: nixpkgs.overlays = [ rofi-material-you.overlays.default ];
+#                    затем pkgs.rofi-material-you
+```
+
+Если у вас уже включён `programs.rofi` из home-manager, модуль сам выставит ему `package` и `theme`
+(через `mkDefault`, свои значения имеют приоритет), ваши `programs.rofi.extraConfig` и плагины
+продолжат работать: пакет — это обычная обёртка `rofi` из nixpkgs вокруг этой сборки.
+
+## Настройки home-manager
+
+```nix
+programs.rofi-material-you = {
+  enable = true;
+
+  layout = "list";                   # "list" | "grid"
+  source.color = "#6750A4";          # сид-цвет
+  source.image = ./wallpaper.png;    # или обои (анализируются при сборке)
+  source.fromMaterialYouTerminal = false;  # взять палитру Material-You-Terminal
+  mode = "dark";                     # "dark" | "light"
+  scheme = "scheme-tonal-spot";      # expressive, vibrant, fidelity, content, rainbow, fruit-salad, neutral, monochrome
+  contrast = 0.0;                    # от -1 до 1
+  palette = { primary = "#D0BCFF"; };# точечные переопределения ролей
+
+  font = "Google Sans 12";           # по умолчанию Roboto Flex 12
+  width = "640px";
+
+  animations = {
+    enable = true;
+    motionScheme = "expressive";     # "expressive" (с отскоком) | "standard" (спокойнее)
+    speed = 1.0;                     # 2.0 — в два раза быстрее
+    fps = 120;
+  };
+
+  extraConfig = { modes = "drun,run,window"; };
+  extraTheme = ''
+    element-icon selected { shape: "clover-4"; }
+  '';
+
+  # Палитра на лету: rofi-myou пересчитывает её при смене файла обоев.
+  dynamic.enable = false;
+  dynamic.wallpaper = "~/.cache/current-wallpaper";
+};
+```
+
+Сгенерированный файл темы доступен как `config.programs.rofi-material-you.theme`.
+
+### Вместе с Material You Terminal
+
+* Статично: `source.fromMaterialYouTerminal = true;` — rofi берёт ровно ту палитру, что сгенерировал
+  `programs.material-you-terminal` (без второго запуска matugen).
+* Динамично: если у обоих включён `dynamic.enable`, модуль добавляет в хуки `myt` команду
+  `rofi-myou apply "$MYT_PALETTE"`, и каждое `myt apply обои.jpg` перекрашивает и rofi.
+
+## Сборка без Nix
+
+Зависимости те же, что у rofi (meson, ninja, flex, bison, glib, cairo, pango, gdk-pixbuf, xcb-util*,
+xkbcommon, wayland — см. [INSTALL.md](INSTALL.md)), для `rofi-myou` нужны Python 3 и matugen.
+
+```sh
+meson setup build
+ninja -C build
+meson test -C build
+sudo ninja -C build install
+```
+
+Устанавливаются `rofi`, `rofi-myou`, темы в `share/rofi/themes/` и шаблон
+`share/rofi/material-you/matugen-rofi.rasi`.
+
+Если вы уже генерируете цвета рабочего стола matugen'ом, добавьте в `~/.config/matugen/config.toml`:
+
+```toml
+[templates.rofi]
+input_path = '/usr/share/rofi/material-you/matugen-rofi.rasi'
+output_path = '~/.config/rofi/material-you/colors.rasi'
+```
+
+## Разработка
+
+```sh
+nix develop                 # всё для сборки + matugen, xvfb, xdotool
+nix build .#default         # пакет (запускает юнит-тесты и проверку тем)
+nix flake check             # сборка, палитры через matugen, модули HM и NixOS
+nix build .#palette-preview # палитра по умолчанию
+```
+
+## Известные ограничения
+
+* Прозрачные скругления окна и тени в X11 требуют композитора (picom и т. п.); без него используйте
+  `window { transparency: "background"; }` или уберите `padding`/`elevation` у окна.
+* Во время анимации окно перерисовывается целиком на каждом кадре. Простой не стоит ничего: кадры
+  запрашиваются, только пока какая-то пружина не успокоилась. Плавное мигание курсора — ~0,3 с
+  перерисовок раз в 1,2 с; отключается `entry { cursor-animation: false; }`.
+* Анимации закрытия нет: rofi выполняет действие сразу, задерживать запуск приложения ради эффекта
+  было бы хуже.
+
+## Лицензия
+
+MIT, как и у rofi. Код rofi — © Sean Pringle, Qball Cow и другие авторы ([AUTHORS](AUTHORS)),
+изменения Material You — © 2026 Kostr2007.
+
+---
+
+_Оригинальный README rofi:_
+
 <p align="center">
 <a href="https://github.com/davatorium/rofi/issues"><img src="https://img.shields.io/github/issues/davatorium/rofi.svg"></a>
 <a href="https://img.shields.io/github/forks/davatorium/rofi.svg"><img src="https://img.shields.io/github/forks/davatorium/rofi.svg"></a>

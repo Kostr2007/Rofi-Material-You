@@ -611,6 +611,39 @@ Select a certain row.
 
 Default: *0*
 
+### Material You animations
+
+These options control the spring animations of the Material You fork. The
+animations themselves are enabled per widget in the theme, see
+**rofi-theme(5)** section *Material You* and `docs/MATERIAL-YOU.md`.
+
+`-[no-]animations`
+
+Enable spring animations. When disabled every animated value jumps to its
+target. Setting the environment variable `ROFI_NO_ANIMATION=1` disables them
+too.
+
+Default: *true*
+
+`-motion-scheme` *scheme*
+
+Material 3 motion scheme: `expressive` (bouncy springs) or `standard` (well
+damped springs).
+
+Default: *expressive*
+
+`-animation-speed` *factor*
+
+Speed factor of all animations, `2.0` is twice as fast. Range 0.05 to 20.
+
+Default: *1.0*
+
+`-animation-fps` *fps*
+
+Frame rate of the animations, 10 to 360.
+
+Default: *120*
+
 ### PATTERN setting
 
 `-terminal`

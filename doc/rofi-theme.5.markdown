@@ -1684,6 +1684,68 @@ If you want to do an optional import, e.g. no error when the file does not exist
 
 This still throws an error on syntax error, but won't abort parsing if file does not exists.
 
+## Material You
+
+This fork adds properties for Material 3 Expressive motion and shapes. All of
+them are off by default. A full reference (in Russian) is in
+`docs/MATERIAL-YOU.md`, the `material-you*` themes use all of them.
+
+Springs are given as a motion token (`spatial-fast`, `spatial-default`,
+`spatial-slow`, `effects-fast`, `effects-default`, `effects-slow`) or as
+`"<stiffness> <damping>"`.
+
+**window**
+
+- **open-animation**: string `none`, `scale`, `expand`, `slide-down`
+  (`slide`), `slide-up` or `fade`. Entrance animation.
+- **open-animation-spring**: spring, default `spatial-default`.
+- **open-animation-scale**: number, start scale, default `0.92`.
+- **open-animation-distance**: distance for the slides, default `32px`.
+
+**listview** and **box**
+
+- **selection-indicator**: boolean. Paint one shape below the selected child
+  that springs to the new selection. Its color and corner radius are the
+  `background-color` and `border-radius` of the selected element.
+- **selection-indicator-stretch**: boolean, default true. The leading edge
+  moves on `spatial-fast`, so the indicator stretches.
+- **selection-indicator-spring**: spring, default `spatial-default`.
+
+**listview**
+
+- **entrance-animation**: boolean. Elements fade and slide in one by one.
+- **entrance-stagger**: integer, milliseconds between elements, default `30`.
+- **entrance-distance**: distance, default `16px`.
+- **ripple**: boolean. Ripple from the click position.
+- **ripple-color**: color, default the element text color at 12% opacity.
+
+**icon** (e.g. element-icon)
+
+- **shape**: string, one of `circle`, `square`, `squircle`, `arch`,
+  `cookie-4`, `cookie-6`, `cookie-7`, `cookie-9`, `cookie-12`, `clover-4`,
+  `clover-8`, `flower`, `sunny`, `very-sunny`, `soft-burst`, `burst`,
+  `triangle`, `pentagon`, `gem`. Shapes morph when the state changes.
+- **shape-color**: color, fill of the shape behind the icon.
+- **shape-clip**: boolean, clip the image to the shape.
+- **shape-rotation**: number, degrees.
+- **shape-spring**: spring, default `spatial-fast`.
+- **icon-scale**: number, size of the image, default `1.0`.
+
+**textbox**
+
+- **cursor-animation**: boolean, gliding cursor that fades when blinking.
+- **color-animation**: boolean, cross-fade the text color between states.
+
+**scrollbar**
+
+- **handle-animation**: boolean, spring the handle.
+- **handle-spring**: spring, default `spatial-default`.
+
+**All widgets**
+
+- **elevation**: integer 0 to 5, Material 3 elevation shadow.
+- **shadow-color**: color, default black.
+
 ## Examples
 
 Several examples are installed together with **rofi**. These can be found in
