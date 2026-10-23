@@ -1,0 +1,59 @@
+/**
+ * Material You for rofi: app grid layout, in the style of the Android
+ * launcher. Icons sit in M3 Expressive shapes that morph and spin when
+ * selected.
+ */
+@import "material-you-base.rasinc"
+
+window {
+    width:                780px;
+    open-animation:       "slide-up";
+    open-animation-distance: 48px;
+}
+
+mainbox {
+    padding:              16px;
+    spacing:              16px;
+    children:             [ inputbar, listview ];
+}
+
+listview {
+    columns:              5;
+    lines:                3;
+    spacing:              6px;
+    fixed-columns:        true;
+    flow:                 horizontal;
+    entrance-stagger:     18;
+    entrance-distance:    24px;
+}
+
+element {
+    orientation:          vertical;
+    padding:              14px 6px 10px 6px;
+    spacing:              8px;
+    border-radius:        @shape-extra-large;
+}
+
+element selected.normal {
+    background-color:     @secondary-container;
+    border-radius:        @shape-extra-large;
+}
+
+element-icon {
+    size:                 64px;
+    horizontal-align:     0.5;
+    shape:                "squircle";
+    shape-color:          @surface-container-highest;
+    icon-scale:           0.62;
+}
+
+element-icon selected {
+    shape:                "cookie-12";
+    shape-color:          @primary-container;
+    shape-rotation:       45;
+    icon-scale:           0.72;
+}
+
+element-text {
+    horizontal-align:     0.5;
+}
